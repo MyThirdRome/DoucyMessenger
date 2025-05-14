@@ -43,6 +43,8 @@ func NewServer(listenAddr string, blockchain *core.Blockchain, bootstrapNodes []
 
 // Start starts the P2P server
 func (s *Server) Start() error {
+        utils.Info("Starting P2P server on %s", s.listenAddr)
+        
         // Start listening for connections
         listener, err := net.Listen("tcp", s.listenAddr)
         if err != nil {
@@ -54,16 +56,27 @@ func (s *Server) Start() error {
         go s.acceptConnections()
 
         // Connect to bootstrap nodes
-        for _, addr := range s.bootstrapNodes {
-                err := s.AddPeer(addr)
-                if err != nil {
-                        utils.Warning("Failed to connect to bootstrap node %s: %v", addr, err)
+        if len(s.bootstrapNodes) > 0 {
+                utils.Info("Connecting to %d configured bootstrap nodes...", len(s.bootstrapNodes))
+                for _, addr := range s.bootstrapNodes {
+                        utils.Info("Connecting to bootstrap node %s", addr)
+                        go func(bootstrapAddr string) {
+                                err := s.AddPeer(bootstrapAddr)
+                                if err != nil {
+                                        utils.Warning("Failed to connect to bootstrap node %s: %v", bootstrapAddr, err)
+                                } else {
+                                        utils.Info("Successfully connected to bootstrap node %s", bootstrapAddr)
+                                }
+                        }(addr)
                 }
+        } else {
+                utils.Warning("No bootstrap nodes configured")
         }
 
-        // Start periodic sync
+        // Start periodic sync and reconnection to bootstrap nodes
         go s.periodicSync()
 
+        utils.Info("P2P server started successfully")
         return nil
 }
 
