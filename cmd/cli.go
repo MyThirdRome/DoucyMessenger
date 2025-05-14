@@ -884,11 +884,47 @@ func (cli *CLI) showStakeRewards(address string) {
 
 // syncWithPeers manually triggers synchronization with peers
 func (cli *CLI) syncWithPeers() {
+        // First check if we have any connected peers
         peers := cli.p2pServer.GetPeers()
         
         if len(peers) == 0 {
-                fmt.Println("No peers connected. Use 'addpeer ADDRESS' to connect to peers first.")
-                return
+                // No peers, try to connect to bootstrap nodes first
+                fmt.Println("No peers connected. Attempting to connect to main bootstrap node...")
+                
+                // Get bootstrap nodes from config
+                bootstrapNodes := cli.config.BootstrapNodes
+                
+                if len(bootstrapNodes) == 0 {
+                        fmt.Println("No bootstrap nodes configured. Use 'addpeer ADDRESS' to connect to peers manually.")
+                        return
+                }
+                
+                // Connect to bootstrap nodes
+                connectedAny := false
+                for _, addr := range bootstrapNodes {
+                        fmt.Printf("Connecting to bootstrap node %s...\n", addr)
+                        err := cli.p2pServer.AddPeer(addr)
+                        if err != nil {
+                                fmt.Printf("Failed to connect to bootstrap node %s: %v\n", err)
+                        } else {
+                                fmt.Printf("Successfully connected to bootstrap node %s\n", addr)
+                                connectedAny = true
+                        }
+                }
+                
+                if !connectedAny {
+                        fmt.Println("Failed to connect to any bootstrap nodes. Use 'addpeer ADDRESS' to connect to peers manually.")
+                        return
+                }
+                
+                // Refresh peers list
+                time.Sleep(time.Second) // brief delay to allow for connection to establish
+                peers = cli.p2pServer.GetPeers()
+                
+                if len(peers) == 0 {
+                        fmt.Println("Still no peers connected after bootstrap attempt. Try again later or use 'addpeer ADDRESS'.")
+                        return
+                }
         }
         
         fmt.Printf("Synchronizing with %d peers...\n", len(peers))
@@ -918,9 +954,59 @@ func (cli *CLI) syncWithPeers() {
                 }
                 
                 fmt.Printf("Successfully requested validators from peer: %s\n", peer.GetAddr())
+                
+                // Also request blockchain data
+                height, err := cli.blockchain.GetHeight()
+                if err != nil {
+                        fmt.Printf("Failed to get blockchain height: %v\n", err)
+                        continue
+                }
+                
+                fmt.Printf("Requesting blocks from %s starting at height %d...\n", peer.GetAddr(), height)
+                
+                // Create get blocks message
+                getBlocksMessage := &p2p.Message{
+                        Type: p2p.MessageTypeGetBlocks,
+                        Data: json.RawMessage(fmt.Sprintf(`{"from_height":%d}`, height)),
+                }
+                
+                // Marshal message
+                getBlocksBytes, err := json.Marshal(getBlocksMessage)
+                if err != nil {
+                        fmt.Printf("Failed to marshal get blocks message: %v\n", err)
+                        continue
+                }
+                
+                // Send message to peer
+                err = peer.SendMessage(getBlocksBytes)
+                if err != nil {
+                        fmt.Printf("Failed to send get blocks message to peer %s: %v\n", peer.GetAddr(), err)
+                        continue
+                }
+                
+                // Also request peer list to discover more peers
+                peerListMessage := &p2p.Message{
+                        Type: p2p.MessageTypeGetPeers,
+                        Data: json.RawMessage("{}"),
+                }
+                
+                // Marshal message
+                peerListBytes, err := json.Marshal(peerListMessage)
+                if err != nil {
+                        fmt.Printf("Failed to marshal get peers message: %v\n", err)
+                        continue
+                }
+                
+                // Send message to peer
+                err = peer.SendMessage(peerListBytes)
+                if err != nil {
+                        fmt.Printf("Failed to send get peers message to peer %s: %v\n", peer.GetAddr(), err)
+                        continue
+                }
         }
         
         fmt.Println("Synchronization requests sent to all peers. Please wait for responses...")
+        fmt.Println("Use 'status' to check the current blockchain state after synchronization.")
 }
 
 // increaseStake increases the stake for a validator

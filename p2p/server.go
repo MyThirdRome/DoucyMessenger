@@ -469,18 +469,36 @@ func (s *Server) periodicSync() {
         syncTicker := time.NewTicker(5 * time.Minute)
         // Check bootstrap connections every 3 minutes
         bootstrapTicker := time.NewTicker(3 * time.Minute)
+        // Quick first sync after 10 seconds (gives time for initial connections)
+        initialSyncTimer := time.NewTimer(10 * time.Second)
+        
         defer syncTicker.Stop()
         defer bootstrapTicker.Stop()
 
+        // Log start of periodic sync
+        utils.Info("Starting periodic synchronization and connection monitoring...")
+
         for {
                 select {
-                case <-syncTicker.C:
-                        // Sync with all peers
+                case <-initialSyncTimer.C:
+                        // Initial sync shortly after startup
+                        utils.Info("Performing initial synchronization...")
                         s.syncWithPeers()
-                case <-bootstrapTicker.C:
-                        // Ensure connection to bootstrap nodes
+                        // Also ensure bootstrap connection
                         s.ensureBootstrapConnections()
+                
+                case <-syncTicker.C:
+                        // Regular sync every 5 minutes
+                        utils.Info("Performing scheduled synchronization...")
+                        s.syncWithPeers()
+                        
+                case <-bootstrapTicker.C:
+                        // Ensure connection to bootstrap nodes every 3 minutes
+                        utils.Info("Checking bootstrap node connections...")
+                        s.ensureBootstrapConnections()
+                        
                 case <-s.quit:
+                        utils.Info("Stopping periodic synchronization...")
                         return
                 }
         }
@@ -488,17 +506,43 @@ func (s *Server) periodicSync() {
 
 // ensureBootstrapConnections ensures that we maintain connections to bootstrap nodes
 func (s *Server) ensureBootstrapConnections() {
+        if len(s.bootstrapNodes) == 0 {
+                utils.Warning("No bootstrap nodes configured")
+                return
+        }
+        
+        connectedCount := 0
+        
         for _, bootstrapAddr := range s.bootstrapNodes {
                 // Check if we're already connected
                 s.peersMutex.RLock()
                 _, connected := s.peers[bootstrapAddr]
                 s.peersMutex.RUnlock()
                 
-                // If not connected, try to connect
-                if !connected {
-                        utils.Info("Reconnecting to bootstrap node: %s", bootstrapAddr)
-                        go s.AddPeer(bootstrapAddr) // Don't block on connection attempts
+                if connected {
+                        connectedCount++
+                        utils.Debug("Already connected to bootstrap node: %s", bootstrapAddr)
+                } else {
+                        // If not connected, try to connect
+                        utils.Info("Attempting to connect to bootstrap node: %s", bootstrapAddr)
+                        
+                        // Try connection in a separate goroutine to avoid blocking
+                        go func(addr string) {
+                                err := s.AddPeer(addr)
+                                if err != nil {
+                                        utils.Warning("Failed to connect to bootstrap node %s: %v", addr, err)
+                                } else {
+                                        utils.Info("Successfully connected to bootstrap node: %s", addr)
+                                }
+                        }(bootstrapAddr)
                 }
+        }
+        
+        totalBootstrap := len(s.bootstrapNodes)
+        if connectedCount > 0 {
+                utils.Info("Connected to %d of %d bootstrap nodes", connectedCount, totalBootstrap)
+        } else if totalBootstrap > 0 {
+                utils.Warning("Not connected to any bootstrap nodes, attempting connections...")
         }
 }
 
