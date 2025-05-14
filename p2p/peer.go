@@ -5,6 +5,7 @@ import (
         "encoding/json"
         "fmt"
         "net"
+        "strings"
         "time"
 )
 
@@ -36,7 +37,7 @@ func NewPeer(addr string, server *Server) (*Peer, error) {
         }, nil
 }
 
-// Connect connects to the peer with a timeout
+// Connect connects to the peer with a proper protocol handshake
 func (p *Peer) Connect() error {
         // Use a shorter timeout for connection to prevent CLI from hanging
         conn, err := net.DialTimeout("tcp", p.addr, 3*time.Second)
@@ -44,16 +45,16 @@ func (p *Peer) Connect() error {
                 return fmt.Errorf("failed to connect to peer %s: %v", p.addr, err)
         }
         
+        p.conn = conn
+        
         // Set deadlines to prevent blocking indefinitely
         conn.SetReadDeadline(time.Now().Add(5 * time.Second))
         conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
         
-        p.conn = conn
-        
-        // Send a handshake message to identify our protocol
+        // Create DoucyA protocol handshake with protocol identifier
         handshake := Message{
                 Type: MessageTypeNodeInfo,
-                Data: json.RawMessage(`{"version":"1.0","protocol":"doucyap2p"}`),
+                Data: json.RawMessage(`{"version":"1.0","protocol":"doucyap2p","handshake":true}`),
         }
         
         handshakeBytes, err := json.Marshal(handshake)
@@ -62,13 +63,17 @@ func (p *Peer) Connect() error {
                 return fmt.Errorf("failed to create handshake: %v", err)
         }
         
+        // Add a newline delimiter for proper message framing
+        handshakeBytes = append(handshakeBytes, '\n')
+        
+        // Send the handshake
         _, err = conn.Write(handshakeBytes)
         if err != nil {
                 conn.Close()
                 return fmt.Errorf("failed to send handshake: %v", err)
         }
         
-        // Reset deadlines to normal operation
+        // Reset deadlines to normal operation - we'll handle timeouts in the message read loop
         conn.SetReadDeadline(time.Time{})
         conn.SetWriteDeadline(time.Time{})
         
@@ -139,24 +144,32 @@ func (p *Peer) readMessages() {
                 }
                 
                 // Enhanced protocol message detection
-                // Check for common non-JSON protocol messages to filter out
-                if len(data) > 0 {
-                        // Check for HTTP and other common protocols
-                        firstChar := data[0]
-                        if firstChar == 'G' || firstChar == 'H' || firstChar == 'P' ||     // HTTP methods (GET, HEAD, POST)
-                           firstChar == 'C' || firstChar == 'U' || firstChar == 'D' ||     // HTTP methods (CONNECT, UPDATE, DELETE)
-                           firstChar == 'A' || firstChar == 'S' || firstChar == 'X' {      // Other protocols
-                                fmt.Printf("Ignoring non-protocol message from peer %s: starts with %c\n", p.addr, firstChar)
-                                continue
-                        }
-
-                        // Check for other common patterns that aren't valid JSON
-                        firstTwoBytes := string(data[:min(2, len(data))])
-                        if firstTwoBytes != "{\"" && firstTwoBytes != "[{" && firstTwoBytes != "[ " {
-                                // Most likely not valid JSON
-                                fmt.Printf("Ignoring invalid JSON format from peer %s\n", p.addr)
-                                continue
-                        }
+                // Check if this is a valid DoucyA protocol message
+                if len(data) < 2 {
+                        fmt.Printf("Ignoring too short message from peer %s\n", p.addr)
+                        continue
+                }
+                
+                // Check for HTTP and other common protocols to filter out non-DoucyA traffic
+                firstChar := data[0]
+                if firstChar == 'G' || firstChar == 'H' || firstChar == 'P' ||     // HTTP methods (GET, HEAD, POST)
+                   firstChar == 'C' || firstChar == 'U' || firstChar == 'D' ||     // HTTP methods (CONNECT, UPDATE, DELETE)
+                   firstChar == 'A' || firstChar == 'S' || firstChar == 'X' {      // Other protocols
+                        fmt.Printf("Ignoring non-protocol message from peer %s: starts with %c\n", p.addr, firstChar)
+                        continue
+                }
+                
+                // Check for valid JSON (typical DoucyA message starts with "{")
+                if data[0] != '{' {
+                        // Not starting with JSON object open brace
+                        fmt.Printf("Ignoring non-JSON message from peer %s\n", p.addr)
+                        continue
+                }
+                
+                // Basic JSON structure verification - at minimum need opening/closing braces
+                if !strings.Contains(string(data), "}") {
+                        fmt.Printf("Ignoring malformed JSON from peer %s\n", p.addr)
+                        continue
                 }
                 
                 // Parse message with better error handling

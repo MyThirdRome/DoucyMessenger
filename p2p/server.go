@@ -3,12 +3,19 @@ package p2p
 import (
         "encoding/json"
         "fmt"
+        "math/rand"
         "net"
         "sync"
         "time"
 
         "github.com/doucya/core"
 )
+
+// Initialize random number generator
+func init() {
+        // Seed the random number generator for better security
+        rand.Seed(time.Now().UnixNano())
+}
 
 // Server represents the P2P server
 type Server struct {
@@ -76,36 +83,72 @@ func (s *Server) Stop() {
         s.peersMutex.Unlock()
 }
 
-// AddPeer adds a new peer to the server
+// AddPeer adds a new peer to the server with improved error handling and timeout
 func (s *Server) AddPeer(addr string) error {
+        // Check if address is valid
+        if addr == "" {
+                return fmt.Errorf("peer address cannot be empty")
+        }
+        
+        // Lock for thread safety
         s.peersMutex.Lock()
-        defer s.peersMutex.Unlock()
-
+        
         // Check if peer already exists
         if _, exists := s.peers[addr]; exists {
+                s.peersMutex.Unlock()
                 return nil // Already connected
         }
-
-        // Create and connect peer
+        
+        // Create peer (without connecting)
         peer, err := NewPeer(addr, s)
         if err != nil {
+                s.peersMutex.Unlock()
                 return fmt.Errorf("failed to create peer: %v", err)
         }
-
-        err = peer.Connect()
-        if err != nil {
-                return fmt.Errorf("failed to connect to peer: %v", err)
+        
+        // Unlock before connect which might take time
+        s.peersMutex.Unlock()
+        
+        // Connect with timeout
+        connectChan := make(chan error, 1)
+        go func() {
+                connectChan <- peer.Connect()
+        }()
+        
+        // Wait for connection with timeout (3 seconds)
+        var connectErr error
+        select {
+        case connectErr = <-connectChan:
+                // Connection completed (success or error)
+        case <-time.After(3 * time.Second):
+                connectErr = fmt.Errorf("connection timeout after 3 seconds")
         }
-
+        
+        if connectErr != nil {
+                return fmt.Errorf("failed to connect to peer: %v", connectErr)
+        }
+        
+        // Relock to update peers map
+        s.peersMutex.Lock()
+        defer s.peersMutex.Unlock()
+        
+        // Recheck if peer was added while we were connecting
+        if _, exists := s.peers[addr]; exists {
+                // Another thread already added this peer while we were connecting
+                // Close our connection to avoid duplicate
+                peer.Close()
+                return nil
+        }
+        
         // Add to peers map
         s.peers[addr] = peer
-
+        
         // Start peer handlers
         go peer.HandleMessages()
-
+        
         // Exchange node information
-        s.exchangeNodeInfo(peer)
-
+        go s.exchangeNodeInfo(peer) // Do this in background to avoid blocking
+        
         return nil
 }
 
@@ -388,7 +431,7 @@ func (s *Server) handleNodeInfo(peer *Peer, message *Message) {
         peer.SetBlockHeight(nodeInfo.BlockHeight)
 }
 
-// handlePeerList handles a peer list message
+// handlePeerList handles a peer list message with spam protection
 func (s *Server) handlePeerList(peer *Peer, message *Message) {
         var peerList []string
         
@@ -397,9 +440,47 @@ func (s *Server) handlePeerList(peer *Peer, message *Message) {
                 fmt.Printf("Failed to unmarshal peer list: %v\n", err)
                 return
         }
+        
+        // Protect against spam - limit new peers to a reasonable number
+        const maxNewPeers = 5
+        peerListLen := len(peerList)
+        
+        if peerListLen > maxNewPeers {
+                fmt.Printf("Received oversized peer list (%d entries), limiting to %d\n", 
+                     peerListLen, maxNewPeers)
+                // Trim the list to avoid connecting to too many peers at once
+                // This helps prevent spam and DDoS attacks
+                if peerListLen > 0 {
+                        // Shuffle the list for randomness to avoid bias
+                        for i := range peerList {
+                                j := rand.Intn(i + 1)
+                                peerList[i], peerList[j] = peerList[j], peerList[i]
+                        }
+                        peerList = peerList[:maxNewPeers]
+                }
+        }
 
+        // Current peer count
+        s.peersMutex.RLock()
+        currentPeerCount := len(s.peers)
+        s.peersMutex.RUnlock()
+        
+        // Don't add more peers if we already have enough
+        // This prevents resource exhaustion
+        const maxTotalPeers = 20 
+        if currentPeerCount >= maxTotalPeers {
+                fmt.Printf("Max peer count reached (%d), not adding more peers\n", maxTotalPeers)
+                return
+        }
+        
         // Connect to new peers
         for _, addr := range peerList {
+                // Skip invalid addresses
+                if addr == "" {
+                        continue
+                }
+                
+                // Don't connect to self or the sending peer
                 if addr != s.listenAddr && addr != peer.GetAddr() {
                         // Check if already connected
                         s.peersMutex.RLock()

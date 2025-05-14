@@ -658,6 +658,11 @@ func (cli *CLI) addPeer(addr string) {
         err := cli.p2pServer.AddPeer(addr)
         if err != nil {
                 fmt.Printf("Failed to add peer: %v\n", err)
+                fmt.Println("Common issues:")
+                fmt.Println("  - Peer may be offline or unreachable")
+                fmt.Println("  - Network port may be blocked or closed")
+                fmt.Println("  - Peer may be running a different protocol version")
+                fmt.Println("Try connecting to a different peer or check your network settings.")
                 return
         }
         
@@ -666,6 +671,9 @@ func (cli *CLI) addPeer(addr string) {
         // Show current peer count
         peers := cli.p2pServer.GetPeers()
         fmt.Printf("Current peers: %d\n", len(peers))
+        
+        fmt.Println("Synchronizing with network...")
+        fmt.Println("Type 'peers' to see all connected peers.")
 }
 
 // replyToMessage sends a reply to a specific message
