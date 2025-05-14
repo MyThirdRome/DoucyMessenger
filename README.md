@@ -33,7 +33,7 @@ cd DoucyMessenger
 ### Step 3: Build and initialize the blockchain
 ```bash
 go mod tidy
-go run main.go -init
+go run main.go -init -port=8333
 ```
 
 This will:
