@@ -101,15 +101,40 @@ Once the node is running, you can use these commands:
 - `status` - Show blockchain status
 - `help` - Show all available commands
 
-## Notes on Node Synchronization
+## Node Synchronization
 
-To keep nodes synchronized across servers:
+DoucyA Blockchain now uses a configurable node list for automatic synchronization:
+
+### Using nodes.txt (Recommended)
+
+The blockchain node will automatically connect to trusted nodes listed in the `nodes.txt` file:
+
+1. Edit the `nodes.txt` file in the root directory
+2. Add one node address per line (in format `host:port`)
+3. Lines starting with `#` are treated as comments
+4. The blockchain will automatically connect to all listed nodes at startup
+5. Changes to `nodes.txt` take effect after restarting the node
+
+Example `nodes.txt`:
+```
+# Main bootstrap node
+185.251.25.31:8333
+
+# Secondary nodes
+example.com:8333
+192.168.1.100:8333
+```
+
+### Manual Peer Connection
+
+You can also manually connect to peers using the CLI:
 
 1. Each node needs to connect to at least one other node in the network
 2. Use the `addpeer` command to connect nodes
-3. Transactions and blocks will automatically propagate through the network
+3. Type `sync` to manually trigger synchronization with all connected nodes
 4. You can check synchronization status with the `status` command
-5. The first 10 nodes on the network receive 15,000 DOU each as genesis allocation
+
+Note: The first 10 nodes on the network receive 15,000 DOU each as genesis allocation
 
 ## License
 

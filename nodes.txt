@@ -1,0 +1,10 @@
+# DoucyA Blockchain - Trusted Node List
+# Format: one node address per line (host:port)
+# Lines starting with # are comments
+
+# Main bootstrap node
+185.251.25.31:8333
+
+# Add more trusted nodes below (one per line)
+# example.com:8333
+# node2.example.com:8333

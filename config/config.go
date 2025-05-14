@@ -1,10 +1,12 @@
 package config
 
 import (
+        "bufio"
         "encoding/json"
         "io/ioutil"
         "os"
         "strconv"
+        "strings"
 )
 
 // Config holds configuration parameters for the application
@@ -63,11 +65,53 @@ func SaveConfig(config *Config, path string) error {
         return ioutil.WriteFile(path, bytes, 0644)
 }
 
+// LoadNodesFromFile loads a list of bootstrap nodes from a text file
+func LoadNodesFromFile(filePath string) []string {
+        // Check if file exists
+        if _, err := os.Stat(filePath); os.IsNotExist(err) {
+                // If file doesn't exist, return an empty list
+                return []string{}
+        }
+        
+        // Open and read the file
+        file, err := os.Open(filePath)
+        if err != nil {
+                return []string{}
+        }
+        defer file.Close()
+        
+        var nodes []string
+        scanner := bufio.NewScanner(file)
+        
+        // Read each line
+        for scanner.Scan() {
+                line := strings.TrimSpace(scanner.Text())
+                
+                // Skip empty lines and comments
+                if line == "" || strings.HasPrefix(line, "#") {
+                        continue
+                }
+                
+                // Add the node address to the list
+                nodes = append(nodes, line)
+        }
+        
+        return nodes
+}
+
 // DefaultConfig returns the default configuration
 func DefaultConfig() *Config {
+        // Try to load bootstrap nodes from nodes.txt
+        nodes := LoadNodesFromFile("nodes.txt")
+        
+        // If no nodes were loaded, use the default main node
+        if len(nodes) == 0 {
+                nodes = []string{"185.251.25.31:8333"} // Main network bootstrap node
+        }
+        
         return &Config{
                 ListenAddr:            "0.0.0.0:8000",
-                BootstrapNodes:        []string{"185.251.25.31:8333"}, // Main network bootstrap node
+                BootstrapNodes:        nodes,
                 DBPath:                "./doucya_data",
                 GenesisReward:         15000.0,
                 ValidatorMinDeposit:   50.0,
@@ -86,5 +130,13 @@ func NewConfig(p2pPort int, dbPath string) *Config {
         config := DefaultConfig()
         config.ListenAddr = "0.0.0.0:" + strconv.Itoa(p2pPort)
         config.DBPath = dbPath
+        
+        // Try to load nodes from nodes.txt (will already be loaded by DefaultConfig,
+        // but we reload here in case the file was modified after the DefaultConfig call)
+        nodes := LoadNodesFromFile("nodes.txt")
+        if len(nodes) > 0 {
+                config.BootstrapNodes = nodes
+        }
+        
         return config
 }

@@ -157,8 +157,20 @@ func main() {
         fmt.Println("\nDoucyA Blockchain - P2P Messaging Platform")
         fmt.Println("------------------------------------------")
         fmt.Println("• Create or import a wallet with 'createwallet' or 'importwallet'")
-        fmt.Println("• Automatic connection to principal node (185.251.25.31:8333) is enabled")
+        
+        // Show message about bootstrap nodes
+        if len(cfg.BootstrapNodes) > 0 {
+                if len(cfg.BootstrapNodes) == 1 {
+                        fmt.Printf("• Connected to trusted node: %s\n", cfg.BootstrapNodes[0])
+                } else {
+                        fmt.Printf("• Connected to %d trusted nodes from nodes.txt\n", len(cfg.BootstrapNodes))
+                }
+        } else {
+                fmt.Println("• No trusted nodes found. Create a nodes.txt file with node addresses.")
+        }
+        
         fmt.Println("• Blockchain data and validators will synchronize automatically")
+        fmt.Println("• Edit nodes.txt to add or remove trusted synchronization nodes")
         fmt.Println("• Type 'sync' to manually force synchronization")
         fmt.Println("• Type 'help' for more commands")
         fmt.Println("------------------------------------------")
