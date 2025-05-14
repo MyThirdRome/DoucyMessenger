@@ -101,3 +101,13 @@
 12:47:40.607956 table@remove removed @18
 12:47:40.608008 table@remove removed @15
 12:47:40.608116 table@remove removed @14
+=============== May 14, 2025 (UTC) ===============
+13:04:26.422806 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+13:04:26.425955 version@stat F·[0 1] S·4KiB[0B 4KiB] Sc·[0.00 0.00]
+13:04:26.425980 db@open opening
+13:04:26.426041 journal@recovery F·1
+13:04:26.428709 journal@recovery recovering @25
+13:04:26.432483 memdb@flush created L0@28 N·5 S·854B "bal..cyA,v55":"wal..cyA,v51"
+13:04:26.432833 version@stat F·[1 1] S·5KiB[854B 4KiB] Sc·[0.25 0.00]
+13:04:26.441071 db@janitor F·4 G·0
+13:04:26.441122 db@open done T·15.125588ms

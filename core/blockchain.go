@@ -5,8 +5,6 @@ import (
         "fmt"
         "sync"
         "time"
-        
-        "github.com/doucya/interfaces"
         "github.com/doucya/messaging"
         "github.com/doucya/models"
         "github.com/doucya/storage"

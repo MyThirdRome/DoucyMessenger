@@ -316,12 +316,33 @@ func (s *Server) syncWithPeers() {
         }
 }
 
+// Helper function to convert interface{} to []byte with type assertion
+func getBytesFromInterface(data interface{}) ([]byte, error) {
+        if data == nil {
+                return nil, fmt.Errorf("data is nil")
+        }
+        
+        bytes, ok := data.([]byte)
+        if !ok {
+                return nil, fmt.Errorf("expected []byte, got %T", data)
+        }
+        
+        return bytes, nil
+}
+
 // Message handlers
 
 // handleNodeInfo handles a node info message
 func (s *Server) handleNodeInfo(peer *Peer, message *Message) {
         var nodeInfo NodeInfo
-        err := json.Unmarshal(message.Data, &nodeInfo)
+        
+        data, err := getBytesFromInterface(message.Data)
+        if err != nil {
+                fmt.Printf("Invalid message data: %v\n", err)
+                return
+        }
+        
+        err = json.Unmarshal(data, &nodeInfo)
         if err != nil {
                 fmt.Printf("Failed to unmarshal node info: %v\n", err)
                 return
@@ -346,7 +367,14 @@ func (s *Server) handleNodeInfo(peer *Peer, message *Message) {
 // handlePeerList handles a peer list message
 func (s *Server) handlePeerList(peer *Peer, message *Message) {
         var peerList []string
-        err := json.Unmarshal(message.Data, &peerList)
+        
+        data, err := getBytesFromInterface(message.Data)
+        if err != nil {
+                fmt.Printf("Invalid message data: %v\n", err)
+                return
+        }
+        
+        err = json.Unmarshal(data, &peerList)
         if err != nil {
                 fmt.Printf("Failed to unmarshal peer list: %v\n", err)
                 return
@@ -370,7 +398,14 @@ func (s *Server) handlePeerList(peer *Peer, message *Message) {
 // handleBlock handles a block message
 func (s *Server) handleBlock(peer *Peer, message *Message) {
         var block core.Block
-        err := json.Unmarshal(message.Data, &block)
+        
+        data, err := getBytesFromInterface(message.Data)
+        if err != nil {
+                fmt.Printf("Invalid message data: %v\n", err)
+                return
+        }
+        
+        err = json.Unmarshal(data, &block)
         if err != nil {
                 fmt.Printf("Failed to unmarshal block: %v\n", err)
                 return
@@ -389,7 +424,14 @@ func (s *Server) handleBlock(peer *Peer, message *Message) {
 // handleTransaction handles a transaction message
 func (s *Server) handleTransaction(peer *Peer, message *Message) {
         var tx core.Transaction
-        err := json.Unmarshal(message.Data, &tx)
+        
+        data, err := getBytesFromInterface(message.Data)
+        if err != nil {
+                fmt.Printf("Invalid message data: %v\n", err)
+                return
+        }
+        
+        err = json.Unmarshal(data, &tx)
         if err != nil {
                 fmt.Printf("Failed to unmarshal transaction: %v\n", err)
                 return
@@ -408,7 +450,14 @@ func (s *Server) handleTransaction(peer *Peer, message *Message) {
 // handleGetBlocks handles a get blocks message
 func (s *Server) handleGetBlocks(peer *Peer, message *Message) {
         var startHeight int64
-        err := json.Unmarshal(message.Data, &startHeight)
+        
+        data, err := getBytesFromInterface(message.Data)
+        if err != nil {
+                fmt.Printf("Invalid message data: %v\n", err)
+                return
+        }
+        
+        err = json.Unmarshal(data, &startHeight)
         if err != nil {
                 fmt.Printf("Failed to unmarshal get blocks: %v\n", err)
                 return

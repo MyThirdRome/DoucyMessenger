@@ -551,7 +551,7 @@ func (cli *CLI) listValidators() {
                 fmt.Printf("%d. Address: %s\n", i+1, address)
                 fmt.Printf("   Stake: %.10f DOU\n", stake)
                 fmt.Printf("   Validating since: %s\n", creationTime)
-                fmt.Printf("   Status: %s\n", v.GetStatus())
+                fmt.Printf("   Status: %s\n", v.GetValidatorStatus())
                 
                 // Calculate estimated monthly reward
                 monthlyReward := v.GetMonthlyReward()

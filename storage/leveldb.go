@@ -268,18 +268,22 @@ func (s *LevelDBStorage) UpdateBalance(address string, balance float64) error {
 }
 
 // SaveValidator saves a validator to the database
-func (s *LevelDBStorage) SaveValidator(validator *models.Validator) error {
+func (s *LevelDBStorage) SaveValidator(validator interface{}) error {
+        v, ok := validator.(*models.Validator)
+        if !ok {
+                return fmt.Errorf("expected *models.Validator but got %T", validator)
+        }
         s.mu.Lock()
         defer s.mu.Unlock()
 
         // Marshal validator to JSON
-        validatorData, err := json.Marshal(validator)
+        validatorData, err := json.Marshal(v)
         if err != nil {
                 return fmt.Errorf("failed to marshal validator: %v", err)
         }
 
         // Store validator by address
-        validatorKey := fmt.Sprintf("%s%s", ValidatorPrefix, validator.Address)
+        validatorKey := fmt.Sprintf("%s%s", ValidatorPrefix, v.Address)
         if err := s.db.Put([]byte(validatorKey), validatorData, nil); err != nil {
                 return fmt.Errorf("failed to save validator: %v", err)
         }
@@ -288,7 +292,7 @@ func (s *LevelDBStorage) SaveValidator(validator *models.Validator) error {
 }
 
 // GetValidator retrieves a validator by address
-func (s *LevelDBStorage) GetValidator(address string) (*models.Validator, error) {
+func (s *LevelDBStorage) GetValidator(address string) (interface{}, error) {
         s.mu.RLock()
         defer s.mu.RUnlock()
 

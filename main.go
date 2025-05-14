@@ -13,6 +13,7 @@ import (
         "github.com/doucya/core"
         "github.com/doucya/models"
         "github.com/doucya/p2p"
+        "github.com/doucya/utils"
         "github.com/doucya/storage"
         "github.com/doucya/wallet"
 )
@@ -52,10 +53,15 @@ func main() {
         }
         
         // Create blockchain
-        blockchain := core.NewBlockchain(store, blockchainConfig)
+        blockchain, err := core.NewBlockchain(store, blockchainConfig)
+        if err != nil {
+                log.Fatalf("Failed to create blockchain: %v", err)
+        }
         
         // Initialize P2P server
-        p2pServer := p2p.NewServer(*p2pPort, blockchain)
+        p2pPortStr := fmt.Sprintf(":%d", *p2pPort)
+        bootstrapNodes := []string{} // Empty list for now
+        p2pServer := p2p.NewServer(p2pPortStr, blockchain, bootstrapNodes)
 
         // Check if we need to initialize a new node
         if *initNode {
