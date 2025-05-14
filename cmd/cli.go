@@ -286,7 +286,7 @@ func (cli *CLI) printHelp() {
         fmt.Println("\n=== Network Commands ===")
         fmt.Println("  peers                               - Show connected peers")
         fmt.Println("  addpeer ADDRESS                     - Add a new peer by address")
-        fmt.Println("  sync                                - Manually trigger synchronization with all peers")
+        fmt.Println("  sync                                - Manually trigger full synchronization with principal node")
 }
 
 // CreateNewWallet creates a new wallet and returns its address

@@ -157,7 +157,9 @@ func main() {
         fmt.Println("\nDoucyA Blockchain - P2P Messaging Platform")
         fmt.Println("------------------------------------------")
         fmt.Println("• Create or import a wallet with 'createwallet' or 'importwallet'")
-        fmt.Println("• Connect to peers with 'addpeer <address:port>'")
+        fmt.Println("• Automatic connection to principal node (185.251.25.31:8333) is enabled")
+        fmt.Println("• Blockchain data and validators will synchronize automatically")
+        fmt.Println("• Type 'sync' to manually force synchronization")
         fmt.Println("• Type 'help' for more commands")
         fmt.Println("------------------------------------------")
         

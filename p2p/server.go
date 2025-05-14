@@ -235,7 +235,7 @@ func (s *Server) RequestPeerList(addr string) error {
         return peer.SendMessage(messageBytes)
 }
 
-// BroadcastMessage broadcasts a message to all peers
+// BroadcastMessage broadcasts a message to all peers, prioritizing the principal node
 func (s *Server) BroadcastMessage(msgType MessageType, data interface{}) error {
         // Create message
         messageBytes, err := s.createMessageBytes(msgType, data)
@@ -243,15 +243,37 @@ func (s *Server) BroadcastMessage(msgType MessageType, data interface{}) error {
                 return fmt.Errorf("failed to create message: %v", err)
         }
 
-        // Send to all peers
+        // Get principal peer if connected
         s.peersMutex.RLock()
-        defer s.peersMutex.RUnlock()
-
+        principalPeer := s.getPrincipalPeer()
+        
+        // Create a list of all other peers
+        otherPeers := make([]*Peer, 0, len(s.peers))
         for _, peer := range s.peers {
+                if principalPeer != nil && peer.GetAddr() == principalPeer.GetAddr() {
+                        continue  // Skip principal peer as we handle it separately
+                }
+                otherPeers = append(otherPeers, peer)
+        }
+        s.peersMutex.RUnlock()
+        
+        // First send to principal node with error handling and reliable delivery
+        if principalPeer != nil {
+                utils.Debug("Sending %s message to principal node %s", msgType, principalPeer.GetAddr())
+                err := principalPeer.SendMessage(messageBytes)
+                if err != nil {
+                        utils.Warning("Failed to send %s message to principal node: %v", msgType, err)
+                        // Try reconnecting to principal node if message fails
+                        go s.ensureBootstrapConnections()
+                }
+        }
+
+        // Then send to all other peers (in parallel)
+        for _, peer := range otherPeers {
                 go func(p *Peer) {
                         err := p.SendMessage(messageBytes)
                         if err != nil {
-                                fmt.Printf("Failed to send message to peer %s: %v\n", p.GetAddr(), err)
+                                utils.Debug("Failed to send %s message to peer %s: %v", msgType, p.GetAddr(), err)
                         }
                 }(peer)
         }
@@ -478,43 +500,75 @@ func (s *Server) requestPeerList(peer *Peer) {
 
 // periodicSync performs periodic synchronization with peers
 func (s *Server) periodicSync() {
-        // Sync every 5 minutes
-        syncTicker := time.NewTicker(5 * time.Minute)
-        // Check bootstrap connections every 3 minutes
-        bootstrapTicker := time.NewTicker(3 * time.Minute)
-        // Quick first sync after 10 seconds (gives time for initial connections)
-        initialSyncTimer := time.NewTimer(10 * time.Second)
+        // Sync every 2 minutes (more frequent syncing)
+        syncTicker := time.NewTicker(2 * time.Minute)
+        // Check bootstrap connections every 1 minute (more aggressive reconnection)
+        bootstrapTicker := time.NewTicker(1 * time.Minute)
+        // Quick first sync after 5 seconds (faster initial sync)
+        initialSyncTimer := time.NewTimer(5 * time.Second)
+        // Status check every 30 seconds
+        statusTicker := time.NewTicker(30 * time.Second)
         
         defer syncTicker.Stop()
         defer bootstrapTicker.Stop()
+        defer statusTicker.Stop()
 
         // Log start of periodic sync
-        utils.Info("Starting periodic synchronization and connection monitoring...")
+        utils.Info("Starting automatic synchronization and connection monitoring...")
 
         for {
                 select {
                 case <-initialSyncTimer.C:
                         // Initial sync shortly after startup
-                        utils.Info("Performing initial synchronization...")
-                        s.syncWithPeers()
-                        // Also ensure bootstrap connection
+                        utils.Info("Performing initial blockchain synchronization...")
+                        // First ensure we're connected to bootstrap
                         s.ensureBootstrapConnections()
+                        // Then do a full sync
+                        time.Sleep(2 * time.Second) // Brief delay for connection to stabilize
+                        s.syncWithPeers()
                 
                 case <-syncTicker.C:
-                        // Regular sync every 5 minutes
-                        utils.Info("Performing scheduled synchronization...")
+                        // Regular sync every 2 minutes
+                        utils.Info("Performing automatic blockchain synchronization...")
                         s.syncWithPeers()
                         
                 case <-bootstrapTicker.C:
-                        // Ensure connection to bootstrap nodes every 3 minutes
-                        utils.Info("Checking bootstrap node connections...")
+                        // Ensure connection to bootstrap nodes every minute
+                        utils.Debug("Verifying connection to principal node...")
                         s.ensureBootstrapConnections()
+                
+                case <-statusTicker.C:
+                        // Check connection status to principal node
+                        connected := s.isConnectedToPrincipalNode()
+                        if !connected {
+                                utils.Warning("Lost connection to principal node, attempting immediate reconnection...")
+                                s.ensureBootstrapConnections()
+                                // Force sync after reconnection
+                                time.Sleep(1 * time.Second)
+                                s.syncWithPeers()
+                        }
                         
                 case <-s.quit:
-                        utils.Info("Stopping periodic synchronization...")
+                        utils.Info("Stopping automatic synchronization...")
                         return
                 }
         }
+}
+
+// isConnectedToPrincipalNode checks if we're connected to the principal node
+func (s *Server) isConnectedToPrincipalNode() bool {
+        if len(s.bootstrapNodes) == 0 {
+                return false
+        }
+        
+        // Check connection to the main bootstrap node (first in the list)
+        principalNode := s.bootstrapNodes[0]
+        
+        s.peersMutex.RLock()
+        _, connected := s.peers[principalNode]
+        s.peersMutex.RUnlock()
+        
+        return connected
 }
 
 // ensureBootstrapConnections ensures that we maintain connections to bootstrap nodes
@@ -559,46 +613,109 @@ func (s *Server) ensureBootstrapConnections() {
         }
 }
 
-// syncWithPeers synchronizes with all peers
+// syncWithPeers synchronizes with all peers, prioritizing the principal node
 func (s *Server) syncWithPeers() {
-        utils.Debug("Starting periodic synchronization...")
+        utils.Debug("Starting blockchain synchronization...")
         
-        // Get a safe copy of peers to iterate
+        // Get a safe copy of peers to iterate, but prioritize the bootstrap node
         s.peersMutex.RLock()
+        principalPeer := s.getPrincipalPeer()
+        
+        // Add all other peers
         peers := make([]*Peer, 0, len(s.peers))
         for _, peer := range s.peers {
+                // Skip principal peer as we'll handle it separately
+                if principalPeer != nil && peer.GetAddr() == principalPeer.GetAddr() {
+                        continue
+                }
                 peers = append(peers, peer)
         }
         s.peersMutex.RUnlock()
         
-        if len(peers) == 0 {
-                utils.Debug("No peers connected for synchronization")
-                // Try to connect to bootstrap nodes if we have no peers
+        // If we have no peers, ensure bootstrap connections
+        if principalPeer == nil && len(peers) == 0 {
+                utils.Warning("No peers connected for synchronization, attempting to connect to principal node")
                 s.ensureBootstrapConnections()
                 return
         }
         
-        utils.Debug("Synchronizing with %d peers", len(peers))
-        
-        // For each peer:
-        // 1. Request latest blockchain info
-        // 2. Request validator list
-        // 3. Update peer list
-        for _, peer := range peers {
-                // Exchange node info (includes blockchain height)
-                if err := s.exchangeNodeInfo(peer); err != nil {
-                        utils.Warning("Failed to exchange node info with peer %s: %v", peer.GetAddr(), err)
-                        continue
+        // First sync with principal node if connected
+        if principalPeer != nil {
+                utils.Info("Synchronizing with principal node: %s", principalPeer.GetAddr())
+                
+                // Get blockchain height before sync to check if we received new blocks
+                oldHeight, _ := s.blockchain.GetHeight()
+                
+                // 1. Exchange node info (includes blockchain height)
+                if err := s.exchangeNodeInfo(principalPeer); err != nil {
+                        utils.Warning("Failed to exchange node info with principal node: %v", err)
+                } else {
+                        // 2. Request blocks - get current height and request any missing blocks
+                        if err := s.syncBlocksFromPeer(principalPeer); err != nil {
+                                utils.Warning("Failed to sync blocks from principal node: %v", err)
+                        }
+                        
+                        // 3. Request validators
+                        s.requestValidators(principalPeer)
+                        
+                        // 4. Request peer list
+                        s.requestPeerList(principalPeer)
+                        
+                        // Check if we got new blocks
+                        newHeight, _ := s.blockchain.GetHeight()
+                        if newHeight > oldHeight {
+                                utils.Info("Synchronized blockchain from height %d to %d", oldHeight, newHeight)
+                        }
                 }
+        }
+        
+        // Then sync with other peers if any
+        if len(peers) > 0 {
+                utils.Debug("Synchronizing with %d additional peers", len(peers))
                 
-                // Request validators
-                s.requestValidators(peer)
-                
-                // Request peer list
-                s.requestPeerList(peer)
+                for _, peer := range peers {
+                        if err := s.exchangeNodeInfo(peer); err != nil {
+                                utils.Warning("Failed to exchange node info with peer %s: %v", peer.GetAddr(), err)
+                                continue
+                        }
+                        
+                        // For regular peers we just fetch validator info and peer lists
+                        // to avoid conflicting block data
+                        s.requestValidators(peer)
+                        s.requestPeerList(peer)
+                }
         }
         
         utils.Debug("Synchronization completed")
+}
+
+// getPrincipalPeer returns the principal node peer if connected
+func (s *Server) getPrincipalPeer() *Peer {
+        if len(s.bootstrapNodes) == 0 {
+                return nil
+        }
+        
+        principalNode := s.bootstrapNodes[0]
+        peer, exists := s.peers[principalNode]
+        if !exists {
+                return nil
+        }
+        
+        return peer
+}
+
+// syncBlocksFromPeer requests and syncs blocks from the specified peer
+func (s *Server) syncBlocksFromPeer(peer *Peer) error {
+        // Get current blockchain height
+        height, err := s.blockchain.GetHeight()
+        if err != nil {
+                utils.Error("Failed to get blockchain height: %v", err)
+                return err
+        }
+        
+        // Request blocks from current height
+        s.requestBlocks(peer, height)
+        return nil
 }
 
 // requestValidators requests validator information from a peer
