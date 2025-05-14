@@ -126,6 +126,11 @@ func (b *Block) GetTimestamp() time.Time {
         return b.Timestamp
 }
 
+// GetTransactions returns the block's transactions
+func (b *Block) GetTransactions() []*Transaction {
+        return b.Transactions
+}
+
 // GetHeight returns the block height
 func (b *Block) GetHeight() uint64 {
         return uint64(b.Height)

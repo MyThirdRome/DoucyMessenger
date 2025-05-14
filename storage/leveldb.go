@@ -8,6 +8,7 @@ import (
         "path/filepath"
         "sync"
 
+        "github.com/doucya/interfaces"
         "github.com/doucya/messaging"
         "github.com/doucya/models"
         "github.com/doucya/wallet"
@@ -324,6 +325,84 @@ func (s *LevelDBStorage) DeleteValidator(address string) error {
         }
 
         return nil
+}
+
+// SaveTransaction saves a transaction to the database
+func (s *LevelDBStorage) SaveTransaction(tx interfaces.Transaction) error {
+        s.mu.Lock()
+        defer s.mu.Unlock()
+
+        // Get the transaction as a concrete type
+        transaction, ok := tx.(*models.Transaction)
+        if !ok {
+                return fmt.Errorf("expected *models.Transaction but got %T", tx)
+        }
+
+        // Marshal transaction to JSON
+        txData, err := json.Marshal(transaction)
+        if err != nil {
+                return fmt.Errorf("failed to marshal transaction: %v", err)
+        }
+
+        // Store transaction by ID
+        txKey := fmt.Sprintf("%s%s", TransactionPrefix, tx.GetID())
+        if err := s.db.Put([]byte(txKey), txData, nil); err != nil {
+                return fmt.Errorf("failed to save transaction: %v", err)
+        }
+
+        return nil
+}
+
+// GetTransaction retrieves a transaction by ID
+func (s *LevelDBStorage) GetTransaction(id string) (interfaces.Transaction, error) {
+        s.mu.RLock()
+        defer s.mu.RUnlock()
+
+        // Get transaction by ID
+        txKey := fmt.Sprintf("%s%s", TransactionPrefix, id)
+        txData, err := s.db.Get([]byte(txKey), nil)
+        if err != nil {
+                if err == leveldb.ErrNotFound {
+                        return nil, nil // No transaction found
+                }
+                return nil, fmt.Errorf("failed to get transaction: %v", err)
+        }
+
+        // Parse transaction
+        var tx models.Transaction
+        if err := json.Unmarshal(txData, &tx); err != nil {
+                return nil, fmt.Errorf("failed to unmarshal transaction: %v", err)
+        }
+
+        return &tx, nil
+}
+
+// GetTransactionsByAddress retrieves all transactions for an address (sender or receiver)
+func (s *LevelDBStorage) GetTransactionsByAddress(address string) ([]interfaces.Transaction, error) {
+        s.mu.RLock()
+        defer s.mu.RUnlock()
+
+        transactions := []interfaces.Transaction{}
+        iter := s.db.NewIterator(util.BytesPrefix([]byte(TransactionPrefix)), nil)
+        defer iter.Release()
+
+        for iter.Next() {
+                var tx models.Transaction
+                if err := json.Unmarshal(iter.Value(), &tx); err != nil {
+                        return nil, fmt.Errorf("failed to unmarshal transaction: %v", err)
+                }
+                
+                // Check if this transaction involves the address
+                if tx.GetSender() == address || tx.GetReceiver() == address {
+                        transactions = append(transactions, &tx)
+                }
+        }
+
+        if err := iter.Error(); err != nil {
+                return nil, fmt.Errorf("error iterating transactions: %v", err)
+        }
+
+        return transactions, nil
 }
 
 // GetValidators retrieves all validators
@@ -685,4 +764,34 @@ func splitKey(key, prefix string) []string {
         }
         
         return parts
+}
+
+// ReadKey reads raw data for the given key
+func (s *LevelDBStorage) ReadKey(key string) ([]byte, error) {
+        s.mu.RLock()
+        defer s.mu.RUnlock()
+
+        // Get value for the key
+        data, err := s.db.Get([]byte(key), nil)
+        if err != nil {
+                if err == leveldb.ErrNotFound {
+                        return nil, nil // Key not found
+                }
+                return nil, fmt.Errorf("failed to read key %s: %v", key, err)
+        }
+
+        return data, nil
+}
+
+// WriteKey writes raw data for the given key
+func (s *LevelDBStorage) WriteKey(key string, data []byte) error {
+        s.mu.Lock()
+        defer s.mu.Unlock()
+
+        // Store value for the key
+        if err := s.db.Put([]byte(key), data, nil); err != nil {
+                return fmt.Errorf("failed to write key %s: %v", key, err)
+        }
+
+        return nil
 }

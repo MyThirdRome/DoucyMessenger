@@ -1016,42 +1016,154 @@ func (s *Server) handlePeerList(peer *Peer, message *Message) {
 
 // handleBlock handles a block message
 func (s *Server) handleBlock(peer *Peer, message *Message) {
-        var block core.Block
+        var block models.Block
         
         err := json.Unmarshal(message.Data, &block)
         if err != nil {
-                fmt.Printf("Failed to unmarshal block: %v\n", err)
+                utils.Error("Failed to unmarshal block: %v", err)
                 return
         }
 
-        // Verify and add block to blockchain
-        // This would typically involve:
-        // 1. Validating the block
-        // 2. Adding it to the blockchain if valid
-        // 3. Updating state accordingly
+        utils.Info("Received block from peer %s: Height=%d, Hash=%s", 
+                peer.GetAddr(), block.GetHeight(), block.GetHash())
 
-        // For simplicity, we'll just print block info
-        fmt.Printf("Received block: Height=%d, Hash=%s\n", block.Height, block.Hash)
+        // First check if we already have this block to avoid duplicates
+        blockKey := fmt.Sprintf("block_%s", block.GetHash())
+        blockData, err := s.blockchain.GetStorage().ReadKey(blockKey)
+        if err == nil && len(blockData) > 0 {
+                // Already have this block
+                utils.Debug("Block %s already processed, skipping", block.GetHash())
+                return
+        }
+
+        // Verify the block is valid
+        if !s.verifyBlock(&block) {
+                utils.Error("Block %s verification failed, rejecting", block.GetHash())
+                return
+        }
+
+        // Add block to blockchain
+        err = s.blockchain.AddBlock(&block)
+        if err != nil {
+                utils.Error("Failed to add block: %v", err)
+                return
+        }
+        
+        utils.Info("Successfully processed block %s", block.GetHash())
+
+        // Forward block to other peers (excluding the sender)
+        senderAddr := peer.GetAddr()
+        s.peersMutex.RLock()
+        peersToForward := make([]*Peer, 0)
+        for addr, p := range s.peers {
+                if addr != senderAddr {
+                        peersToForward = append(peersToForward, p)
+                }
+        }
+        s.peersMutex.RUnlock()
+        
+        if len(peersToForward) > 0 {
+                utils.Info("Forwarding block %s to %d other peers", 
+                        block.GetHash(), len(peersToForward))
+                        
+                // Create message bytes once
+                messageBytes, err := s.createMessageBytes(MessageTypeBlock, block)
+                if err != nil {
+                        utils.Error("Failed to create block message: %v", err)
+                        return
+                }
+                
+                // Send to each peer (except the sender)
+                for _, p := range peersToForward {
+                        err := p.SendMessage(messageBytes)
+                        if err != nil {
+                                utils.Debug("Failed to forward block to peer %s: %v", p.GetAddr(), err)
+                        }
+                }
+        }
+}
+
+// verifyBlock verifies if a block is valid
+func (s *Server) verifyBlock(block *models.Block) bool {
+        // In a real implementation, we would verify:
+        // 1. Block hash is correct
+        // 2. Previous block hash matches our chain
+        // 3. Block height is correct
+        // 4. All transactions are valid
+        // 5. Block signature is valid
+        
+        // For now, just do basic validation
+        if block.GetHash() == "" || block.GetPrevHash() == "" {
+                return false
+        }
+        
+        // Validate height makes sense
+        currentHeight := s.blockchain.GetCurrentBlock().GetHeight()
+        if block.GetHeight() <= currentHeight {
+                // We already have blocks at this height or higher
+                // This can happen during normal sync, so it's not necessarily an error
+                utils.Debug("Received block with height %d but our current height is %d", 
+                        block.GetHeight(), currentHeight)
+                return false
+        }
+        
+        // More validation would go here in a real implementation
+        
+        return true
 }
 
 // handleTransaction handles a transaction message
 func (s *Server) handleTransaction(peer *Peer, message *Message) {
-        var tx core.Transaction
+        var tx models.Transaction
         
         err := json.Unmarshal(message.Data, &tx)
         if err != nil {
-                fmt.Printf("Failed to unmarshal transaction: %v\n", err)
+                utils.Error("Failed to unmarshal transaction: %v", err)
                 return
         }
 
-        // Verify and add transaction to mempool
-        // This would typically involve:
-        // 1. Validating the transaction
-        // 2. Adding it to the mempool if valid
+        utils.Info("Received transaction from peer %s: ID=%s, From=%s, To=%s, Amount=%.2f", 
+                peer.GetAddr(), tx.GetID(), tx.GetSender(), tx.GetReceiver(), tx.GetAmount())
 
-        // For simplicity, we'll just print transaction info
-        fmt.Printf("Received transaction: ID=%s, From=%s, To=%s, Amount=%.10f\n", 
-                tx.ID, tx.Sender, tx.Receiver, tx.Amount)
+        // Add transaction to blockchain
+        err = s.blockchain.ProcessTransaction(&tx)
+        if err != nil {
+                utils.Error("Failed to process transaction: %v", err)
+                return
+        }
+        
+        utils.Info("Successfully processed transaction %s", tx.GetID())
+
+        // Forward transaction to other peers (excluding the sender)
+        senderAddr := peer.GetAddr()
+        s.peersMutex.RLock()
+        peersToForward := make([]*Peer, 0)
+        for addr, p := range s.peers {
+                if addr != senderAddr {
+                        peersToForward = append(peersToForward, p)
+                }
+        }
+        s.peersMutex.RUnlock()
+        
+        if len(peersToForward) > 0 {
+                utils.Info("Forwarding transaction %s to %d other peers", 
+                        tx.GetID(), len(peersToForward))
+                        
+                // Create message bytes once
+                messageBytes, err := s.createMessageBytes(MessageTypeTransaction, tx)
+                if err != nil {
+                        utils.Error("Failed to create transaction message: %v", err)
+                        return
+                }
+                
+                // Send to each peer (except the sender)
+                for _, p := range peersToForward {
+                        err := p.SendMessage(messageBytes)
+                        if err != nil {
+                                utils.Debug("Failed to forward transaction to peer %s: %v", p.GetAddr(), err)
+                        }
+                }
+        }
 }
 
 // handleGetBlocks handles a get blocks message

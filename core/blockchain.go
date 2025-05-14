@@ -5,6 +5,7 @@ import (
         "fmt"
         "sync"
         "time"
+        
         "github.com/doucya/messaging"
         "github.com/doucya/models"
         "github.com/doucya/storage"
@@ -143,6 +144,85 @@ func (bc *Blockchain) GetBalance(address string) (float64, error) {
                 return 0, err
         }
         return balance, nil
+}
+
+// ProcessTransaction processes a transaction received from the network
+func (bc *Blockchain) ProcessTransaction(tx *models.Transaction) error {
+        bc.mu.Lock()
+        defer bc.mu.Unlock()
+
+        // Get transaction details
+        from := tx.GetSender()
+        to := tx.GetReceiver()
+        amount := tx.GetAmount()
+        txType := tx.GetType()
+
+        utils.Info("Processing transaction: From=%s, To=%s, Amount=%.2f, Type=%s", 
+                from, to, amount, string(txType))
+
+        // Verify address format
+        if !wallet.ValidateAddress(from) || !wallet.ValidateAddress(to) {
+                return errors.New("invalid address format")
+        }
+
+        // Check if transaction already exists to avoid duplicates
+        txKey := fmt.Sprintf("tx_%s", tx.GetID())
+        
+        // Check if the transaction exists by trying to retrieve its data
+        txData, err := bc.storage.ReadKey(txKey)
+        if err == nil && len(txData) > 0 {
+                // Already processed this transaction
+                utils.Info("Transaction %s already processed, skipping", tx.GetID())
+                return nil
+        }
+
+        // Check if sender has enough balance
+        balance, err := bc.storage.GetBalance(from)
+        if err != nil {
+                return fmt.Errorf("failed to get sender balance: %v", err)
+        }
+
+        if balance < amount {
+                return fmt.Errorf("insufficient balance: %f < %f", balance, amount)
+        }
+
+        // Create new block with this transaction
+        block := models.NewBlock([]*models.Transaction{tx}, bc.currentBlock)
+        
+        // Save block
+        if err := bc.storage.SaveBlock(block); err != nil {
+                return fmt.Errorf("failed to save block: %v", err)
+        }
+        
+        // Update balances
+        if err := bc.storage.UpdateBalance(from, balance-amount); err != nil {
+                return fmt.Errorf("failed to update sender balance: %v", err)
+        }
+        
+        toBalance, err := bc.storage.GetBalance(to)
+        if err != nil {
+                toBalance = 0
+        }
+        
+        if err := bc.storage.UpdateBalance(to, toBalance+amount); err != nil {
+                // Rollback the sender's balance if receiver update fails
+                _ = bc.storage.UpdateBalance(from, balance)
+                return fmt.Errorf("failed to update receiver balance: %v", err)
+        }
+        
+        // Save the transaction
+        if err := bc.storage.SaveTransaction(tx); err != nil {
+                utils.Error("Failed to save transaction: %v", err)
+                // No need to rollback balances as they're already updated in the blockchain
+        }
+
+        // Update current block
+        bc.currentBlock = block
+        
+        utils.Info("Transaction %s successfully processed in block %s", 
+                tx.GetID(), block.GetHash())
+
+        return nil
 }
 
 // SendCoins sends coins from one address to another
@@ -903,3 +983,99 @@ func (bc *Blockchain) GetValidator(address string) (*models.Validator, error) {
         
         return v, nil
 }
+
+// GetStorage returns the blockchain's storage
+func (bc *Blockchain) GetStorage() *storage.LevelDBStorage {
+        return bc.storage
+}
+
+// GetCurrentBlock returns the current block in the blockchain
+func (bc *Blockchain) GetCurrentBlock() *models.Block {
+        bc.mu.RLock()
+        defer bc.mu.RUnlock()
+        return bc.currentBlock
+}
+
+// AddBlock adds a new block to the blockchain
+func (bc *Blockchain) AddBlock(block *models.Block) error {
+        bc.mu.Lock()
+        defer bc.mu.Unlock()
+
+        // Verify block connects to our current chain
+        if block.GetPrevHash() != bc.currentBlock.GetHash() {
+                return fmt.Errorf("block doesn't connect to our current chain")
+        }
+
+        // Verify block height is correct
+        if block.GetHeight() != bc.currentBlock.GetHeight()+1 {
+                return fmt.Errorf("incorrect block height")
+        }
+
+        // Process all transactions in the block
+        for _, tx := range block.GetTransactions() {
+                // Skip if transaction already exists
+                txKey := fmt.Sprintf("tx_%s", tx.GetID())
+                txData, err := bc.storage.ReadKey(txKey)
+                if err == nil && len(txData) > 0 {
+                        // Already processed this transaction
+                        utils.Debug("Transaction %s already processed, skipping", tx.GetID())
+                        continue
+                }
+
+                // Update balances
+                from := tx.GetSender()
+                to := tx.GetReceiver()
+                amount := tx.GetAmount()
+
+                // Skip the balance update for genesis transactions
+                if tx.GetType() != models.TransactionTypeGenesis {
+                        // Update sender balance (if not system)
+                        if from != "SYSTEM" {
+                                senderBalance, err := bc.storage.GetBalance(from)
+                                if err != nil {
+                                        return fmt.Errorf("failed to get sender balance: %v", err)
+                                }
+
+                                if err := bc.storage.UpdateBalance(from, senderBalance-amount); err != nil {
+                                        return fmt.Errorf("failed to update sender balance: %v", err)
+                                }
+                        }
+
+                        // Update receiver balance
+                        receiverBalance, err := bc.storage.GetBalance(to)
+                        if err != nil {
+                                receiverBalance = 0
+                        }
+
+                        if err := bc.storage.UpdateBalance(to, receiverBalance+amount); err != nil {
+                                return fmt.Errorf("failed to update receiver balance: %v", err)
+                        }
+                }
+
+                // Mark transaction as processed
+                if err := bc.storage.WriteKey(txKey, []byte("processed")); err != nil {
+                        utils.Error("Failed to mark transaction as processed: %v", err)
+                }
+        }
+
+        // Save the block
+        if err := bc.storage.SaveBlock(block); err != nil {
+                return fmt.Errorf("failed to save block: %v", err)
+        }
+
+        // Update current block
+        bc.currentBlock = block
+
+        // Mark block as processed
+        blockKey := fmt.Sprintf("block_%s", block.GetHash())
+        if err := bc.storage.WriteKey(blockKey, []byte("processed")); err != nil {
+                utils.Error("Failed to mark block as processed: %v", err)
+        }
+
+        utils.Info("Added block %s at height %d with %d transactions", 
+                block.GetHash(), block.GetHeight(), len(block.GetTransactions()))
+
+        return nil
+}
+
+
