@@ -15,6 +15,7 @@ import (
         "github.com/doucya/models"
         "github.com/doucya/p2p"
         "github.com/doucya/storage"
+        "github.com/doucya/utils"
         "github.com/doucya/wallet"
 )
 
@@ -211,6 +212,8 @@ func (cli *CLI) processCommand(cmd string) {
                 cli.addPeer(args[1])
         case "sync":
                 cli.syncWithPeers()
+        case "netlog":
+                cli.startNetworkLog()
         case "reply":
                 if len(args) < 4 {
                         fmt.Println("Usage: reply FROM TO MESSAGE_ID MESSAGE")
@@ -294,6 +297,7 @@ func (cli *CLI) printHelp() {
         fmt.Println("  peers                               - Show connected peers")
         fmt.Println("  addpeer ADDRESS                     - Add a new peer by address")
         fmt.Println("  sync                                - Manually trigger full synchronization with trusted nodes")
+        fmt.Println("  netlog                              - Start real-time network activity monitor")
         fmt.Println("  (Edit nodes.txt file to modify the list of trusted synchronization nodes)")
 }
 
@@ -1230,4 +1234,101 @@ func (cli *CLI) decryptMessage(address, messageID, privateKeyHex string) {
         fmt.Printf("From: %s\n", message.GetSender())
         fmt.Printf("Content: %s\n", decrypted)
         fmt.Printf("Timestamp: %s\n", message.GetTimestamp().Format("2006-01-02 15:04:05"))
+}
+
+// startNetworkLog shows a continuous log of network activity
+func (cli *CLI) startNetworkLog() {
+        // Check if we have a logger setup
+        if cli.p2pServer == nil {
+                fmt.Println("P2P server not initialized")
+                return
+        }
+
+        // Enable verbose logging
+        utils.SetLogLevel(utils.LogLevelDebug)
+        
+        // Print header
+        fmt.Println("======================================")
+        fmt.Println("NETWORK ACTIVITY MONITOR STARTED")
+        fmt.Println("Press Ctrl+C to exit monitor mode")
+        fmt.Println("======================================")
+        
+        // Get current network stats
+        peers := cli.p2pServer.GetPeers()
+        fmt.Printf("Connected to %d peers\n", len(peers))
+        for _, peer := range peers {
+                fmt.Printf("  - %s\n", peer.GetAddr())
+        }
+        
+        // Get current blockchain status
+        height, err := cli.blockchain.GetHeight()
+        if err != nil {
+                fmt.Printf("Failed to get blockchain height: %v\n", err)
+        } else {
+                fmt.Printf("Current blockchain height: %d\n", height)
+        }
+        
+        // Start connection check loop
+        fmt.Println("\nMonitoring network activity...\n")
+        
+        // Force a sync to show some activity
+        go cli.syncWithPeers()
+        
+        // Create a ticker to check connection status every 5 seconds
+        ticker := time.NewTicker(5 * time.Second)
+        defer ticker.Stop()
+        
+        // Channel to listen for terminal input
+        done := make(chan bool)
+        
+        // Start a goroutine to read user input
+        go func() {
+                reader := bufio.NewReader(os.Stdin)
+                for {
+                        _, err := reader.ReadString('\n')
+                        if err != nil {
+                                continue
+                        }
+                        // Any key press will exit
+                        done <- true
+                        return
+                }
+        }()
+        
+        // Keep running until user presses a key
+        for {
+                select {
+                case <-ticker.C:
+                        // Print current peers
+                        currentPeers := cli.p2pServer.GetPeers()
+                        if len(currentPeers) != len(peers) {
+                                fmt.Printf("[%s] Peer count changed: %d -> %d\n", 
+                                        time.Now().Format("15:04:05"), len(peers), len(currentPeers))
+                                peers = currentPeers
+                        }
+                        
+                        // Try to reconnect to bootstrap nodes if needed
+                        if len(currentPeers) == 0 {
+                                fmt.Printf("[%s] No connected peers, attempting to reconnect...\n", 
+                                        time.Now().Format("15:04:05"))
+                                bootstrapNodes := cli.config.BootstrapNodes
+                                for _, addr := range bootstrapNodes {
+                                        err := cli.p2pServer.AddPeer(addr)
+                                        if err != nil {
+                                                fmt.Printf("[%s] Failed to connect to %s: %v\n", 
+                                                        time.Now().Format("15:04:05"), addr, err)
+                                        } else {
+                                                fmt.Printf("[%s] Successfully connected to %s\n", 
+                                                        time.Now().Format("15:04:05"), addr)
+                                        }
+                                }
+                        }
+                        
+                case <-done:
+                        fmt.Println("\nExiting network monitor mode")
+                        // Restore normal log level
+                        utils.SetLogLevel(utils.LogLevelInfo)
+                        return
+                }
+        }
 }
