@@ -105,6 +105,13 @@ func (s *Server) AddPeer(addr string) error {
                 return fmt.Errorf("peer address cannot be empty")
         }
         
+        // Check if this address potentially refers to ourselves
+        // This prevents a node from trying to connect to itself
+        if s.isSelfAddress(addr) {
+                utils.Info("Skipping self-connection to %s", addr)
+                return fmt.Errorf("refusing self-connection to %s", addr)
+        }
+        
         // Lock for thread safety
         s.peersMutex.Lock()
         
@@ -183,6 +190,66 @@ func (s *Server) AddPeer(addr string) error {
         go s.exchangeNodeInfo(peer)
         
         return nil
+}
+
+// isSelfAddress checks if an address potentially refers to this node
+func (s *Server) isSelfAddress(addr string) bool {
+        // Extract our own listening address information
+        ownAddr := s.listenAddr
+        ownHost, ownPort, err := net.SplitHostPort(ownAddr)
+        if err != nil {
+                utils.Error("Failed to parse own address %s: %v", ownAddr, err)
+                return false
+        }
+        
+        // Extract target address information
+        targetHost, targetPort, err := net.SplitHostPort(addr)
+        if err != nil {
+                utils.Error("Failed to parse target address %s: %v", addr, err)
+                return false
+        }
+
+        // Fast path: direct match or localhost with matching port
+        if targetPort == ownPort {
+                // Direct match
+                if targetHost == ownHost {
+                        return true
+                }
+                
+                // Localhost addresses (if we're listening on loopback or all interfaces)
+                if (ownHost == "0.0.0.0" || ownHost == "127.0.0.1" || ownHost == "localhost") && 
+                   (targetHost == "127.0.0.1" || targetHost == "localhost" || targetHost == "0.0.0.0") {
+                        return true
+                }
+        }
+        
+        // Check all network interfaces if we're listening on 0.0.0.0
+        if ownHost == "0.0.0.0" && targetPort == ownPort {
+                interfaces, err := net.Interfaces()
+                if err != nil {
+                        utils.Error("Failed to get network interfaces: %v", err)
+                        return false
+                }
+                
+                for _, iface := range interfaces {
+                        addrs, err := iface.Addrs()
+                        if err != nil {
+                                continue
+                        }
+                        
+                        for _, addr := range addrs {
+                                ipNet, ok := addr.(*net.IPNet)
+                                if ok {
+                                        ip := ipNet.IP.String()
+                                        if ip == targetHost {
+                                                return true
+                                        }
+                                }
+                        }
+                }
+        }
+        
+        return false
 }
 
 // RemovePeer removes a peer from the server
@@ -581,6 +648,12 @@ func (s *Server) ensureBootstrapConnections() {
         connectedCount := 0
         
         for _, bootstrapAddr := range s.bootstrapNodes {
+                // Skip self-connections to avoid loops
+                if s.isSelfAddress(bootstrapAddr) {
+                        utils.Debug("Skipping bootstrap connection to self at %s", bootstrapAddr)
+                        continue
+                }
+                
                 // Check if we're already connected
                 s.peersMutex.RLock()
                 _, connected := s.peers[bootstrapAddr]
