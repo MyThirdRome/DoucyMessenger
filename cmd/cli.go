@@ -6,6 +6,7 @@ import (
         "os"
         "strconv"
         "strings"
+        "time"
 
         "github.com/doucya/config"
         "github.com/doucya/core"
@@ -76,12 +77,12 @@ func (cli *CLI) processCommand(cmd string) {
         case "exit", "quit":
                 cli.running = false
         case "createwallet", "createaddress":
-                address, err := cli.CreateNewWallet()
+                _, err := cli.CreateNewWallet()
                 if err != nil {
                         fmt.Printf("Error creating wallet: %v\n", err)
                         return
                 }
-                fmt.Printf("New wallet created with address: %s\n", address)
+                // Address is displayed in CreateNewWallet method now
         case "importwallet":
                 if len(args) < 2 {
                         fmt.Println("Usage: importwallet PRIVATE_KEY")
@@ -273,9 +274,10 @@ func (cli *CLI) CreateNewWallet() (string, error) {
                 return "", err
         }
         
-        // Print the private key
+        // Print the private key and address
         fmt.Printf("Your private key: %s\n", w.GetPrivateKeyString())
         fmt.Println("IMPORTANT: Save this private key securely. It cannot be recovered if lost.")
+        fmt.Printf("Your wallet address: %s\n", address)
         
         // Check for node count directly from storage
         nodeCount, err := cli.storage.GetNodeCount()
@@ -654,8 +656,25 @@ func (cli *CLI) showPeers() {
 func (cli *CLI) addPeer(addr string) {
         fmt.Printf("Connecting to peer %s...\n", addr)
         
-        // Try to connect to the peer
-        err := cli.p2pServer.AddPeer(addr)
+        // Use a goroutine with timeout to avoid blocking the main CLI
+        connectChannel := make(chan error, 1)
+        
+        // Start connection in a goroutine
+        go func() {
+                err := cli.p2pServer.AddPeer(addr)
+                connectChannel <- err
+        }()
+        
+        // Wait for result with timeout
+        var err error
+        select {
+        case err = <-connectChannel:
+                // Connection attempt completed (success or failure)
+        case <-time.After(5 * time.Second):
+                err = fmt.Errorf("connection timed out after 5 seconds")
+        }
+        
+        // Handle connection result
         if err != nil {
                 fmt.Printf("Failed to add peer: %v\n", err)
                 fmt.Println("Common issues:")
