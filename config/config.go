@@ -67,7 +67,7 @@ func SaveConfig(config *Config, path string) error {
 func DefaultConfig() *Config {
         return &Config{
                 ListenAddr:            "0.0.0.0:8000",
-                BootstrapNodes:        []string{},
+                BootstrapNodes:        []string{"185.251.25.31:8333"}, // Main network bootstrap node
                 DBPath:                "./doucya_data",
                 GenesisReward:         15000.0,
                 ValidatorMinDeposit:   50.0,

@@ -415,12 +415,12 @@ func (s *Server) createMessageBytes(msgType MessageType, data interface{}) ([]by
 }
 
 // exchangeNodeInfo exchanges node information with a peer
-func (s *Server) exchangeNodeInfo(peer *Peer) {
+func (s *Server) exchangeNodeInfo(peer *Peer) error {
         // Get current blockchain height
         height, err := s.blockchain.GetHeight()
         if err != nil {
-                fmt.Printf("Failed to get blockchain height: %v\n", err)
-                return
+                utils.Error("Failed to get blockchain height: %v", err)
+                return err
         }
 
         // Create node info
@@ -434,17 +434,17 @@ func (s *Server) exchangeNodeInfo(peer *Peer) {
         // Send message
         messageBytes, err := s.createMessageBytes(MessageTypeNodeInfo, nodeInfo)
         if err != nil {
-                fmt.Printf("Failed to create node info message: %v\n", err)
-                return
+                utils.Error("Failed to create node info message: %v", err)
+                return err
         }
 
         err = peer.SendMessage(messageBytes)
         if err != nil {
-                fmt.Printf("Failed to send node info to peer %s: %v\n", peer.GetAddr(), err)
+                utils.Error("Failed to send node info to peer %s: %v", peer.GetAddr(), err)
+                return err
         }
 
-        // Request peer list
-        s.requestPeerList(peer)
+        return nil
 }
 
 // requestPeerList requests a list of peers from a peer
@@ -465,21 +465,104 @@ func (s *Server) requestPeerList(peer *Peer) {
 
 // periodicSync performs periodic synchronization with peers
 func (s *Server) periodicSync() {
-        ticker := time.NewTicker(5 * time.Minute)
-        defer ticker.Stop()
+        // Sync every 5 minutes
+        syncTicker := time.NewTicker(5 * time.Minute)
+        // Check bootstrap connections every 3 minutes
+        bootstrapTicker := time.NewTicker(3 * time.Minute)
+        defer syncTicker.Stop()
+        defer bootstrapTicker.Stop()
 
         for {
                 select {
-                case <-ticker.C:
+                case <-syncTicker.C:
+                        // Sync with all peers
                         s.syncWithPeers()
+                case <-bootstrapTicker.C:
+                        // Ensure connection to bootstrap nodes
+                        s.ensureBootstrapConnections()
                 case <-s.quit:
                         return
                 }
         }
 }
 
+// ensureBootstrapConnections ensures that we maintain connections to bootstrap nodes
+func (s *Server) ensureBootstrapConnections() {
+        for _, bootstrapAddr := range s.bootstrapNodes {
+                // Check if we're already connected
+                s.peersMutex.RLock()
+                _, connected := s.peers[bootstrapAddr]
+                s.peersMutex.RUnlock()
+                
+                // If not connected, try to connect
+                if !connected {
+                        utils.Info("Reconnecting to bootstrap node: %s", bootstrapAddr)
+                        go s.AddPeer(bootstrapAddr) // Don't block on connection attempts
+                }
+        }
+}
+
 // syncWithPeers synchronizes with all peers
 func (s *Server) syncWithPeers() {
+        utils.Debug("Starting periodic synchronization...")
+        
+        // Get a safe copy of peers to iterate
+        s.peersMutex.RLock()
+        peers := make([]*Peer, 0, len(s.peers))
+        for _, peer := range s.peers {
+                peers = append(peers, peer)
+        }
+        s.peersMutex.RUnlock()
+        
+        if len(peers) == 0 {
+                utils.Debug("No peers connected for synchronization")
+                // Try to connect to bootstrap nodes if we have no peers
+                s.ensureBootstrapConnections()
+                return
+        }
+        
+        utils.Debug("Synchronizing with %d peers", len(peers))
+        
+        // For each peer:
+        // 1. Request latest blockchain info
+        // 2. Request validator list
+        // 3. Update peer list
+        for _, peer := range peers {
+                // Exchange node info (includes blockchain height)
+                err := s.exchangeNodeInfo(peer)
+                if err != nil {
+                        utils.Warning("Failed to exchange node info with peer %s: %v", peer.GetAddr(), err)
+                        continue
+                }
+                
+                // Request validators
+                s.requestValidators(peer)
+                
+                // Request peer list
+                s.requestPeerList(peer)
+        }
+        
+        utils.Debug("Synchronization completed")
+}
+
+// requestValidators requests validator information from a peer
+func (s *Server) requestValidators(peer *Peer) {
+        // Create a get validators message
+        messageBytes, err := s.createMessageBytes(MessageTypeGetValidators, nil)
+        if err != nil {
+                utils.Error("Failed to create get validators message: %v", err)
+                return
+        }
+        
+        // Send message
+        err = peer.SendMessage(messageBytes)
+        if err != nil {
+                utils.Error("Failed to send get validators to peer %s: %v", peer.GetAddr(), err)
+        }
+}
+
+// requestBlocks requests blocks from a peer
+func (s *Server) requestBlocks(peer *Peer, fromHeight int64) {
         // Get current blockchain height
         height, err := s.blockchain.GetHeight()
         if err != nil {
