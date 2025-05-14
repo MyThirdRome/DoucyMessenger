@@ -529,8 +529,7 @@ func (s *Server) syncWithPeers() {
         // 3. Update peer list
         for _, peer := range peers {
                 // Exchange node info (includes blockchain height)
-                err := s.exchangeNodeInfo(peer)
-                if err != nil {
+                if err := s.exchangeNodeInfo(peer); err != nil {
                         utils.Warning("Failed to exchange node info with peer %s: %v", peer.GetAddr(), err)
                         continue
                 }
@@ -561,13 +560,13 @@ func (s *Server) requestValidators(peer *Peer) {
         }
 }
 
-// requestBlocks requests blocks from a peer
-func (s *Server) requestBlocks(peer *Peer, fromHeight int64) {
+// broadcastNodeInfo broadcasts node information to all peers
+func (s *Server) broadcastNodeInfo() error {
         // Get current blockchain height
         height, err := s.blockchain.GetHeight()
         if err != nil {
-                fmt.Printf("Failed to get blockchain height: %v\n", err)
-                return
+                utils.Error("Failed to get blockchain height: %v", err)
+                return err
         }
 
         // Create node info
@@ -581,8 +580,11 @@ func (s *Server) requestBlocks(peer *Peer, fromHeight int64) {
         // Broadcast to all peers
         err = s.BroadcastMessage(MessageTypeNodeInfo, nodeInfo)
         if err != nil {
-                fmt.Printf("Failed to broadcast node info: %v\n", err)
+                utils.Error("Failed to broadcast node info: %v", err)
+                return err
         }
+        
+        return nil
 }
 
 // We don't need this function anymore since we're using json.RawMessage
@@ -772,14 +774,14 @@ func (s *Server) requestBlocks(peer *Peer, startHeight int64) {
         // Create message
         messageBytes, err := s.createMessageBytes(MessageTypeGetBlocks, startHeight)
         if err != nil {
-                fmt.Printf("Failed to create get blocks message: %v\n", err)
+                utils.Error("Failed to create get blocks message: %v", err)
                 return
         }
 
         // Send message
         err = peer.SendMessage(messageBytes)
         if err != nil {
-                fmt.Printf("Failed to send get blocks to peer %s: %v\n", peer.GetAddr(), err)
+                utils.Error("Failed to send get blocks to peer %s: %v", peer.GetAddr(), err)
         }
 }
 
