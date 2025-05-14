@@ -28,13 +28,13 @@ sudo apt install -y build-essential wget git curl libleveldb-dev
 ### Step 2: Install Go
 
 ```bash
-# Download Go 1.19.3
-wget https://go.dev/dl/go1.19.3.linux-amd64.tar.gz
+# Download the latest Go version
+wget https://golang.org/dl/go1.21.5.linux-amd64.tar.gz
 
 # Extract Go to /usr/local
 sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf go1.19.3.linux-amd64.tar.gz
-rm go1.19.3.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.21.5.linux-amd64.tar.gz
+rm go1.21.5.linux-amd64.tar.gz
 
 # Add Go to PATH
 echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.profile
