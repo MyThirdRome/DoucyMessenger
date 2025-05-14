@@ -571,6 +571,7 @@ func (cli *CLI) startValidating(address string) {
                 return
         }
 
+        // Register as validator
         err = cli.blockchain.RegisterValidator(address, minDeposit)
         if err != nil {
                 fmt.Printf("Failed to register as validator: %v\n", err)
@@ -578,6 +579,30 @@ func (cli *CLI) startValidating(address string) {
         }
 
         fmt.Printf("Address %s is now a validator with deposit of %.10f DOU\n", address, minDeposit)
+        
+        // Get the validator we just created
+        validator, err := cli.blockchain.GetValidator(address)
+        if err != nil || validator == nil {
+                fmt.Printf("Warning: Validator was created but couldn't be retrieved for broadcasting: %v\n", err)
+                return
+        }
+        
+        // Broadcast the validator to all connected nodes
+        fmt.Println("Broadcasting validator information to connected nodes...")
+        
+        // Use BroadcastMessage instead of BroadcastValidator since that's the actual API in the p2p server
+        broadcastErr := cli.p2pServer.BroadcastMessage(p2p.MessageTypeValidator, validator)
+        if broadcastErr != nil {
+                fmt.Printf("Warning: Validator was created but failed to broadcast: %v\n", broadcastErr)
+                fmt.Println("You may need to manually sync with 'sync' command to propagate the validator.")
+                return
+        }
+        
+        fmt.Println("Validator information successfully broadcast to all connected nodes.")
+        
+        // Force a sync to ensure consistency
+        fmt.Println("Initiating network synchronization...")
+        cli.syncWithPeers()
 }
 
 func (cli *CLI) stopValidating(address string) {
@@ -663,10 +688,36 @@ func (cli *CLI) showStatus() {
                 return
         }
 
+        // Get connected peers
+        peers := cli.p2pServer.GetPeers()
+        
+        // Get last block - using storage directly as it's more reliable
+        lastBlock, err := cli.storage.GetLastBlock()
+        if err != nil {
+                fmt.Printf("Error getting last block: %v\n", err)
+        }
+        
         fmt.Println("Blockchain Status:")
         fmt.Printf("  Current Height: %d\n", height)
+        if lastBlock != nil {
+                fmt.Printf("  Latest Block Hash: %s\n", lastBlock.GetHash())
+        }
+        
         fmt.Printf("  Active Validators: %d\n", len(validators))
+        if len(validators) > 0 {
+                fmt.Println("  Validator Addresses:")
+                for i, v := range validators {
+                        fmt.Printf("    %d. %s (Stake: %.2f DOU)\n", i+1, v.GetAddress(), v.GetStake())
+                }
+        }
         fmt.Printf("  Minimum Validator Deposit: %.10f DOU\n", cli.blockchain.GetValidatorMinDeposit())
+        fmt.Printf("  Connected Peers: %d\n", len(peers))
+        if len(peers) > 0 {
+                fmt.Println("  Peer Connections:")
+                for i, peer := range peers {
+                        fmt.Printf("    %d. %s\n", i+1, peer.GetAddr())
+                }
+        }
 }
 
 func (cli *CLI) showPeers() {

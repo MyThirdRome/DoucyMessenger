@@ -164,12 +164,15 @@ func main() {
                         fmt.Printf("• Connected to trusted node: %s\n", cfg.BootstrapNodes[0])
                 } else {
                         fmt.Printf("• Connected to %d trusted nodes from nodes.txt\n", len(cfg.BootstrapNodes))
+                        for i, node := range cfg.BootstrapNodes {
+                                fmt.Printf("  %d. %s\n", i+1, node)
+                        }
                 }
         } else {
                 fmt.Println("• No trusted nodes found. Create a nodes.txt file with node addresses.")
         }
         
-        fmt.Println("• Blockchain data and validators will synchronize automatically")
+        fmt.Println("• Blockchain data and validators will synchronize automatically between nodes")
         fmt.Println("• Edit nodes.txt to add or remove trusted synchronization nodes")
         fmt.Println("• Type 'sync' to manually force synchronization")
         fmt.Println("• Type 'help' for more commands")

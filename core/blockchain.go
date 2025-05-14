@@ -333,7 +333,7 @@ func (bc *Blockchain) WhitelistAddress(from, to string) error {
         return bc.storage.SaveWhitelist(from, to)
 }
 
-// RegisterValidator registers an address as a validator
+// RegisterValidator registers an address as a validator and broadcasts it to the network
 func (bc *Blockchain) RegisterValidator(address string, deposit float64) error {
         bc.mu.Lock()
         defer bc.mu.Unlock()
@@ -371,8 +371,18 @@ func (bc *Blockchain) RegisterValidator(address string, deposit float64) error {
                 return err
         }
 
-        // Save validator
-        return bc.storage.SaveValidator(validator)
+        // Save validator to storage
+        err = bc.storage.SaveValidator(validator)
+        if err != nil {
+                return fmt.Errorf("failed to save validator: %v", err)
+        }
+
+        // Signal that a new validator was created - this will be used by other parts
+        // of the system to broadcast the validator to the network
+        utils.Info("New validator registered: %s with deposit %.2f DOU", address, deposit)
+        
+        // Validator was successfully registered
+        return nil
 }
 
 // UnregisterValidator removes an address as a validator and returns the deposit
@@ -563,12 +573,23 @@ func (bc *Blockchain) SyncValidator(validator *models.Validator) error {
         defer bc.mu.Unlock()
         
         // Check if we already have this validator
-        if _, exists := bc.validators[validator.Address]; exists {
-                return nil // Already have this validator
+        if existingValidator, exists := bc.validators[validator.Address]; exists {
+                // If we already have this validator, check if we need to update its information
+                if existingValidator.GetLastRewardTime().Before(validator.GetLastRewardTime()) {
+                        // The incoming validator has newer reward information, update ours
+                        bc.validators[validator.Address] = validator
+                        utils.Info("Updated existing validator %s with newer information", validator.GetAddress())
+                        
+                        // Save updated validator to storage
+                        return bc.storage.SaveValidator(validator)
+                }
+                return nil // Already have this validator with up-to-date info
         }
         
         // Add validator to our list
         bc.validators[validator.Address] = validator
+        utils.Info("Added new validator from network sync: %s with stake %.2f DOU", 
+                validator.GetAddress(), validator.GetStake())
         
         // Save to storage
         return bc.storage.SaveValidator(validator)

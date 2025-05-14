@@ -348,6 +348,30 @@ func (s *Server) BroadcastMessage(msgType MessageType, data interface{}) error {
         return nil
 }
 
+// BroadcastValidator sends a validator to all connected peers and nodes in nodes.txt
+func (s *Server) BroadcastValidator(validator interface{}) error {
+        utils.Info("Broadcasting validator to all connected nodes...")
+        
+        // First broadcast to all connected peers
+        err := s.BroadcastMessage(MessageTypeValidator, validator)
+        if err != nil {
+                return fmt.Errorf("failed to broadcast validator: %v", err)
+        }
+        
+        // Also ensure we're connected to all bootstrap nodes in nodes.txt
+        // This is important to make sure validators propagate to trusted nodes
+        // even if they weren't connected at the time of creation
+        s.ensureBootstrapConnections()
+        
+        // Count the number of peers the validator was sent to
+        s.peersMutex.RLock()
+        peerCount := len(s.peers)
+        s.peersMutex.RUnlock()
+        
+        utils.Info("Validator broadcast to %d connected nodes", peerCount)
+        return nil
+}
+
 // HandleMessage handles a received message
 func (s *Server) HandleMessage(peer *Peer, message *Message) {
         switch message.Type {
@@ -388,6 +412,9 @@ func (s *Server) handleValidator(peer *Peer, message *Message) {
                 return
         }
 
+        utils.Info("Received validator data from peer %s: address=%s, stake=%.2f", 
+                peer.GetAddr(), validator.Address, validator.Deposit)
+
         // Convert to models.Validator
         modelValidator := &models.Validator{
                 Address:         validator.Address,
@@ -409,8 +436,37 @@ func (s *Server) handleValidator(peer *Peer, message *Message) {
                 return
         }
 
-        // Broadcast to other peers
-        s.BroadcastMessage(MessageTypeValidator, validator)
+        // Only forward to other peers if this is new information
+        // This prevents endless broadcast loops
+        senderAddr := peer.GetAddr()
+        s.peersMutex.RLock()
+        peersToForward := make([]*Peer, 0)
+        for addr, p := range s.peers {
+                if addr != senderAddr {
+                        peersToForward = append(peersToForward, p)
+                }
+        }
+        s.peersMutex.RUnlock()
+        
+        if len(peersToForward) > 0 {
+                utils.Info("Forwarding validator %s to %d other peers", 
+                        validator.Address, len(peersToForward))
+                        
+                // Create message bytes once
+                messageBytes, err := s.createMessageBytes(MessageTypeValidator, validator)
+                if err != nil {
+                        utils.Error("Failed to create validator message: %v", err)
+                        return
+                }
+                
+                // Send to each peer (except the sender)
+                for _, p := range peersToForward {
+                        err := p.SendMessage(messageBytes)
+                        if err != nil {
+                                utils.Debug("Failed to forward validator to peer %s: %v", p.GetAddr(), err)
+                        }
+                }
+        }
 }
 
 // handleGetValidators handles a request for validators
@@ -421,14 +477,32 @@ func (s *Server) handleGetValidators(peer *Peer) {
                 return
         }
         
-        // Send each validator separately
-        for _, validator := range validators {
-            // Send each validator as a message
-            err := s.BroadcastMessage(MessageTypeValidator, validator)
-            if err != nil {
-                utils.Error("Error broadcasting validator: %v", err)
-            }
+        if len(validators) == 0 {
+                utils.Info("No validators to send to peer %s", peer.GetAddr())
+                return
         }
+        
+        utils.Info("Sending %d validators to peer %s", len(validators), peer.GetAddr())
+        
+        // Send each validator directly to the requesting peer
+        for _, validator := range validators {
+                // Create message for this specific validator
+                messageBytes, err := s.createMessageBytes(MessageTypeValidator, validator)
+                if err != nil {
+                        utils.Error("Error creating validator message: %v", err)
+                        continue
+                }
+                
+                // Send just to the requesting peer (not broadcast to everyone)
+                err = peer.SendMessage(messageBytes)
+                if err != nil {
+                        utils.Error("Error sending validator to peer %s: %v", peer.GetAddr(), err)
+                } else {
+                        utils.Debug("Sent validator %s to peer %s", validator.GetAddress(), peer.GetAddr())
+                }
+        }
+        
+        utils.Info("Finished sending validators to peer %s", peer.GetAddr())
 }
 
 // handleValidatorList handles a list of validators
@@ -793,6 +867,8 @@ func (s *Server) syncBlocksFromPeer(peer *Peer) error {
 
 // requestValidators requests validator information from a peer
 func (s *Server) requestValidators(peer *Peer) {
+        utils.Info("Requesting validators from peer %s...", peer.GetAddr())
+        
         // Create a get validators message
         messageBytes, err := s.createMessageBytes(MessageTypeGetValidators, nil)
         if err != nil {
@@ -804,6 +880,8 @@ func (s *Server) requestValidators(peer *Peer) {
         err = peer.SendMessage(messageBytes)
         if err != nil {
                 utils.Error("Failed to send get validators to peer %s: %v", peer.GetAddr(), err)
+        } else {
+                utils.Info("Successfully requested validators from peer %s", peer.GetAddr())
         }
 }
 

@@ -61,3 +61,69 @@
 20:00:09.023342 table@remove removed @8
 20:00:09.023861 table@remove removed @5
 20:00:09.023928 table@remove removed @2
+=============== May 14, 2025 (UTC) ===============
+20:16:51.757010 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+20:16:51.758760 version@stat F·[0 1] S·1KiB[0B 1KiB] Sc·[0.00 0.00]
+20:16:51.758780 db@open opening
+20:16:51.758821 journal@recovery F·1
+20:16:51.759477 journal@recovery recovering @14
+20:16:51.759803 version@stat F·[0 1] S·1KiB[0B 1KiB] Sc·[0.00 0.00]
+20:16:51.781518 db@janitor F·3 G·0
+20:16:51.781585 db@open done T·22.793429ms
+=============== May 14, 2025 (UTC) ===============
+20:18:01.705364 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+20:18:01.705700 version@stat F·[0 1] S·1KiB[0B 1KiB] Sc·[0.00 0.00]
+20:18:01.705725 db@open opening
+20:18:01.705769 journal@recovery F·1
+20:18:01.706527 journal@recovery recovering @17
+20:18:01.715523 memdb@flush created L0@19 N·1 S·331B "val..cyA,v19":"val..cyA,v19"
+20:18:01.715761 version@stat F·[1 1] S·1KiB[331B 1KiB] Sc·[0.25 0.00]
+20:18:01.724214 db@janitor F·4 G·0
+20:18:01.724251 db@open done T·18.504209ms
+=============== May 14, 2025 (UTC) ===============
+20:20:50.630457 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+20:20:50.631027 version@stat F·[1 1] S·1KiB[331B 1KiB] Sc·[0.25 0.00]
+20:20:50.631045 db@open opening
+20:20:50.631089 journal@recovery F·1
+20:20:50.631791 journal@recovery recovering @20
+20:20:50.632156 version@stat F·[1 1] S·1KiB[331B 1KiB] Sc·[0.25 0.00]
+20:20:50.680574 db@janitor F·4 G·0
+20:20:50.680626 db@open done T·49.562556ms
+=============== May 14, 2025 (UTC) ===============
+20:22:09.759191 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+20:22:09.759374 version@stat F·[1 1] S·1KiB[331B 1KiB] Sc·[0.25 0.00]
+20:22:09.759439 db@open opening
+20:22:09.759502 journal@recovery F·1
+20:22:09.767449 journal@recovery recovering @22
+20:22:09.768284 version@stat F·[1 1] S·1KiB[331B 1KiB] Sc·[0.25 0.00]
+20:22:09.813147 db@janitor F·4 G·0
+20:22:09.813579 db@open done T·54.111727ms
+=============== May 14, 2025 (UTC) ===============
+20:23:11.888438 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+20:23:11.888834 version@stat F·[1 1] S·1KiB[331B 1KiB] Sc·[0.25 0.00]
+20:23:11.888939 db@open opening
+20:23:11.889088 journal@recovery F·1
+20:23:11.900353 journal@recovery recovering @24
+20:23:11.928876 memdb@flush created L0@26 N·5 S·850B "bal..cyA,v25":"wal..cyA,v21"
+20:23:11.930264 version@stat F·[2 1] S·2KiB[1KiB 1KiB] Sc·[0.50 0.00]
+20:23:11.946122 db@janitor F·5 G·0
+20:23:11.946545 db@open done T·57.503886ms
+=============== May 14, 2025 (UTC) ===============
+20:23:43.277996 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+20:23:43.278144 version@stat F·[2 1] S·2KiB[1KiB 1KiB] Sc·[0.50 0.00]
+20:23:43.278167 db@open opening
+20:23:43.278218 journal@recovery F·1
+20:23:43.279008 journal@recovery recovering @27
+20:23:43.402109 memdb@flush created L0@29 N·2 S·360B "bal..cyA,v27":"val..cyA,v28"
+20:23:43.402594 version@stat F·[3 1] S·2KiB[1KiB 1KiB] Sc·[0.75 0.00]
+20:23:43.414920 db@janitor F·6 G·0
+20:23:43.414970 db@open done T·136.773831ms
+=============== May 14, 2025 (UTC) ===============
+20:24:40.525733 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+20:24:40.525895 version@stat F·[3 1] S·2KiB[1KiB 1KiB] Sc·[0.75 0.00]
+20:24:40.525914 db@open opening
+20:24:40.525967 journal@recovery F·1
+20:24:40.526681 journal@recovery recovering @30
+20:24:40.527731 version@stat F·[3 1] S·2KiB[1KiB 1KiB] Sc·[0.75 0.00]
+20:24:40.541411 db@janitor F·6 G·0
+20:24:40.541460 db@open done T·15.528559ms
