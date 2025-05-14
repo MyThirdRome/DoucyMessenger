@@ -3,6 +3,8 @@ package models
 import (
         "encoding/json"
         "time"
+        
+        "github.com/doucya/interfaces"
 )
 
 // ValidatorStatus represents the status of a validator
@@ -34,6 +36,24 @@ type Validator struct {
         TotalEarnings   float64          `json:"total_earnings"`
         YearlyAPY       float64          `json:"yearly_apy"`
         MinimumStake    float64          `json:"minimum_stake"`
+}
+
+// Ensure Validator implements interfaces.ValidatorInterface
+var _ interfaces.ValidatorInterface = (*Validator)(nil)
+
+// GetDeposit returns the deposit amount of the validator
+func (v *Validator) GetDeposit() float64 {
+        return v.Deposit
+}
+
+// GetStartTime returns the start time of the validator
+func (v *Validator) GetStartTime() time.Time {
+        return v.StartTime
+}
+
+// GetTotalRewards returns the total rewards of the validator
+func (v *Validator) GetTotalRewards() float64 {
+        return v.TotalEarnings
 }
 
 // NewValidator creates a new validator

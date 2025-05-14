@@ -5,6 +5,8 @@ import (
         "fmt"
         "sync"
         "time"
+        
+        "github.com/doucya/interfaces"
         "github.com/doucya/messaging"
         "github.com/doucya/models"
         "github.com/doucya/storage"
@@ -761,10 +763,8 @@ func (bc *Blockchain) IncreaseValidatorStake(address string, amount float64) err
                 return fmt.Errorf("failed to get validator: %v", err)
         }
         
-        v, ok := validator.(*models.Validator)
-        if !ok {
-                return fmt.Errorf("invalid validator type")
-        }
+        // We know this is a *models.Validator, so use it directly
+        v := validator.(*models.Validator)
         
         // Get current balance
         balance, err := bc.GetBalance(address)
@@ -808,11 +808,8 @@ func (bc *Blockchain) GetValidator(address string) (*models.Validator, error) {
                 return nil, nil
         }
         
-        // Check if we got a concrete Validator type
-        v, ok := validator.(*models.Validator)
-        if !ok {
-                return nil, fmt.Errorf("invalid validator type received from storage")
-        }
+        // We know this is a *models.Validator, so use it directly
+        v := validator.(*models.Validator)
         
         return v, nil
 }
