@@ -7,6 +7,8 @@ import (
         "net"
         "strings"
         "time"
+        
+        "github.com/doucya/utils"
 )
 
 // min returns the smaller of x or y.
@@ -146,7 +148,7 @@ func (p *Peer) readMessages() {
                 // Enhanced protocol message detection
                 // Check if this is a valid DoucyA protocol message
                 if len(data) < 2 {
-                        fmt.Printf("Ignoring too short message from peer %s\n", p.addr)
+                        utils.Debug("Ignoring too short message from peer %s", p.addr)
                         continue
                 }
                 
@@ -155,20 +157,20 @@ func (p *Peer) readMessages() {
                 if firstChar == 'G' || firstChar == 'H' || firstChar == 'P' ||     // HTTP methods (GET, HEAD, POST)
                    firstChar == 'C' || firstChar == 'U' || firstChar == 'D' ||     // HTTP methods (CONNECT, UPDATE, DELETE)
                    firstChar == 'A' || firstChar == 'S' || firstChar == 'X' {      // Other protocols
-                        fmt.Printf("Ignoring non-protocol message from peer %s: starts with %c\n", p.addr, firstChar)
+                        utils.Debug("Ignoring non-protocol message from peer %s: starts with %c", p.addr, firstChar)
                         continue
                 }
                 
                 // Check for valid JSON (typical DoucyA message starts with "{")
                 if data[0] != '{' {
                         // Not starting with JSON object open brace
-                        fmt.Printf("Ignoring non-JSON message from peer %s\n", p.addr)
+                        utils.Debug("Ignoring non-JSON message from peer %s", p.addr)
                         continue
                 }
                 
                 // Basic JSON structure verification - at minimum need opening/closing braces
                 if !strings.Contains(string(data), "}") {
-                        fmt.Printf("Ignoring malformed JSON from peer %s\n", p.addr)
+                        utils.Debug("Ignoring malformed JSON from peer %s", p.addr)
                         continue
                 }
                 
@@ -177,13 +179,13 @@ func (p *Peer) readMessages() {
                 err := json.Unmarshal(data, &message)
                 if err != nil {
                         // Log error but don't print the data which might be large
-                        fmt.Printf("Failed to parse message from peer %s (len: %d): %v\n", p.addr, len(data), err)
+                        utils.Debug("Failed to parse message from peer %s (len: %d): %v", p.addr, len(data), err)
                         continue
                 }
                 
                 // Validate message
                 if message.Type == "" {
-                        fmt.Printf("Received message with empty type from peer %s\n", p.addr)
+                        utils.Debug("Received message with empty type from peer %s", p.addr)
                         continue
                 }
                 

@@ -9,6 +9,7 @@ import (
         "time"
 
         "github.com/doucya/core"
+        "github.com/doucya/utils"
 )
 
 // Initialize random number generator
@@ -55,7 +56,7 @@ func (s *Server) Start() error {
         for _, addr := range s.bootstrapNodes {
                 err := s.AddPeer(addr)
                 if err != nil {
-                        fmt.Printf("Failed to connect to bootstrap node %s: %v\n", addr, err)
+                        utils.Warning("Failed to connect to bootstrap node %s: %v", addr, err)
                 }
         }
 

@@ -41,17 +41,38 @@ func NewCLI(blockchain *core.Blockchain, p2pServer *p2p.Server, storage *storage
 // Start begins the CLI interactive mode
 func (cli *CLI) Start() {
         cli.running = true
-        fmt.Println("Welcome to DoucyA Blockchain CLI!")
+        fmt.Println("\nWelcome to DoucyA Blockchain CLI!")
         fmt.Println("Type 'help' for a list of commands")
 
-        for cli.running {
-                fmt.Print("> ")
-                if !cli.scanner.Scan() {
-                        break
+        // Initialize a scanner for reading stdin in a more reliable way
+        scanner := bufio.NewScanner(os.Stdin)
+        
+        // Print initial prompt
+        fmt.Print("> ")
+        
+        // Main CLI loop
+        for cli.running && scanner.Scan() {
+                // Get the command
+                cmd := scanner.Text()
+                
+                // Skip empty commands
+                if cmd == "" {
+                        fmt.Print("> ")
+                        continue
                 }
-
-                cmd := cli.scanner.Text()
+                
+                // Process the command
                 cli.processCommand(cmd)
+                
+                // Print prompt after each command if we're still running
+                if cli.running {
+                        fmt.Print("> ")
+                }
+        }
+        
+        // Check for errors
+        if err := scanner.Err(); err != nil {
+                fmt.Printf("Scanner error: %v\n", err)
         }
 }
 
@@ -66,7 +87,9 @@ func (cli *CLI) InitializeNode() error {
 
 // processCommand processes a CLI command
 func (cli *CLI) processCommand(cmd string) {
-        args := strings.Fields(cmd)
+        // Clean the command and extract args
+        cleanCmd := strings.TrimSpace(cmd)
+        args := strings.Fields(cleanCmd)
         if len(args) == 0 {
                 return
         }
@@ -77,12 +100,11 @@ func (cli *CLI) processCommand(cmd string) {
         case "exit", "quit":
                 cli.running = false
         case "createwallet", "createaddress":
+                // Create a new wallet 
                 _, err := cli.CreateNewWallet()
                 if err != nil {
                         fmt.Printf("Error creating wallet: %v\n", err)
-                        return
                 }
-                // Address is displayed in CreateNewWallet method now
         case "importwallet":
                 if len(args) < 2 {
                         fmt.Println("Usage: importwallet PRIVATE_KEY")
@@ -91,9 +113,9 @@ func (cli *CLI) processCommand(cmd string) {
                 address, err := cli.ImportWallet(args[1])
                 if err != nil {
                         fmt.Printf("Error importing wallet: %v\n", err)
-                        return
+                } else {
+                        fmt.Printf("Wallet imported successfully with address: %s\n", address)
                 }
-                fmt.Printf("Wallet imported successfully with address: %s\n", address)
         case "listaddresses":
                 cli.listAddresses()
         case "getbalance":
@@ -274,10 +296,13 @@ func (cli *CLI) CreateNewWallet() (string, error) {
                 return "", err
         }
         
-        // Print the private key and address
-        fmt.Printf("Your private key: %s\n", w.GetPrivateKeyString())
-        fmt.Println("IMPORTANT: Save this private key securely. It cannot be recovered if lost.")
-        fmt.Printf("Your wallet address: %s\n", address)
+        // Prepare output with clean formatting
+        output := fmt.Sprintf("Your private key: %s\n", w.GetPrivateKeyString())
+        output += "IMPORTANT: Save this private key securely. It cannot be recovered if lost.\n"
+        output += fmt.Sprintf("Your wallet address: %s", address)
+        
+        // Print in one go to avoid output being mixed with other messages
+        fmt.Println(output)
         
         // Check for node count directly from storage
         nodeCount, err := cli.storage.GetNodeCount()

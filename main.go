@@ -32,7 +32,37 @@ func main() {
         cliOnly := flag.Bool("cli", false, "Start in CLI-only mode")
         testWallet := flag.Bool("testwallet", false, "Test wallet creation with genesis allocation")
         p2pPort := flag.Int("port", 8333, "P2P network port")
+        logLevel := flag.String("loglevel", "info", "Log level (debug, info, warning, error, none)")
+        // These flags are defined but unused - we always log to file and never to console
+        _ = flag.Bool("logfile", true, "Write logs to file")
+        _ = flag.Bool("logconsole", false, "Write logs to console")
         flag.Parse()
+        
+        // Initialize logger - force logging to file and not console to avoid CLI interference
+        var level utils.LogLevel
+        switch *logLevel {
+        case "debug":
+                level = utils.LogLevelDebug
+        case "info":
+                level = utils.LogLevelInfo
+        case "warning":
+                level = utils.LogLevelWarning
+        case "error":
+                level = utils.LogLevelError
+        case "none":
+                level = utils.LogLevelNone
+        default:
+                level = utils.LogLevelInfo
+        }
+        
+        // Always log to file, never to console (for CLI clarity)
+        if err := utils.InitLogger(level, true, false); err != nil {
+                log.Printf("Failed to initialize logger: %v", err)
+        }
+        defer utils.CloseLogger()
+        
+        // Log startup
+        utils.Info("Starting DoucyA Blockchain node...")
 
         // Load configuration
         cfg := config.NewConfig(*p2pPort, *dbPath)
