@@ -6,6 +6,7 @@ import (
         "encoding/hex"
         "encoding/json"
         "errors"
+        "fmt"
         "time"
 
         "github.com/doucya/interfaces"
@@ -25,21 +26,39 @@ const (
         TransactionTypeValidatorReward TransactionType = "VALIDATOR_REWARD"
 )
 
-// Transaction represents a transaction in the blockchain
-type Transaction struct {
-        ID        string          `json:"id"`
-        Timestamp time.Time       `json:"timestamp"`
-        Sender    string          `json:"sender"`
-        Receiver  string          `json:"receiver"`
-        Amount    float64         `json:"amount"`
-        Type      TransactionType `json:"type"`
-        MessageData *interfaces.MessageMetadata `json:"message_data,omitempty"`
-        IsPenalty bool            `json:"is_penalty,omitempty"`
-        Signature string          `json:"signature"`
-        Data      map[string]interface{} `json:"data,omitempty"`
+// TxInput represents a transaction input
+type TxInput struct {
+        TxID        string `json:"tx_id"`        // Reference to the transaction containing the output
+        OutputIndex int    `json:"output_index"` // Index of the output in the referenced transaction
+        Owner       string `json:"owner"`        // Owner's address
+        Signature   string `json:"signature"`    // Signature to verify ownership
 }
 
-// NewTransaction creates a new transaction
+// TxOutput represents a transaction output
+type TxOutput struct {
+        Value  float64 `json:"value"`  // Amount of coins
+        Owner  string  `json:"owner"`  // Address of the recipient
+}
+
+// Transaction represents a transaction in the blockchain
+type Transaction struct {
+        ID          string          `json:"id"`
+        Timestamp   time.Time       `json:"timestamp"`
+        Sender      string          `json:"sender"`     // Kept for backwards compatibility
+        Receiver    string          `json:"receiver"`   // Kept for backwards compatibility
+        Amount      float64         `json:"amount"`     // Kept for backwards compatibility
+        Type        TransactionType `json:"type"`
+        MessageData *interfaces.MessageMetadata `json:"message_data,omitempty"`
+        IsPenalty   bool            `json:"is_penalty,omitempty"`
+        Signature   string          `json:"signature"`
+        Data        map[string]interface{} `json:"data,omitempty"`
+        
+        // New UTXO fields
+        Inputs      []*TxInput      `json:"inputs"`
+        Outputs     []*TxOutput     `json:"outputs"`
+}
+
+// NewTransaction creates a new transaction (for backward compatibility)
 func NewTransaction(sender, receiver string, amount float64, txType TransactionType) *Transaction {
         tx := &Transaction{
                 Timestamp: time.Now(),
@@ -48,12 +67,85 @@ func NewTransaction(sender, receiver string, amount float64, txType TransactionT
                 Amount:    amount,
                 Type:      txType,
                 Data:      make(map[string]interface{}),
+                Inputs:    []*TxInput{},
+                Outputs:   []*TxOutput{},
+        }
+        
+        // For genesis transactions, create a direct output to the receiver
+        if txType == TransactionTypeGenesis {
+                output := &TxOutput{
+                        Value: amount,
+                        Owner: receiver,
+                }
+                tx.Outputs = append(tx.Outputs, output)
         }
         
         // Generate transaction ID based on its contents
         tx.ID = tx.GenerateID()
         
         return tx
+}
+
+// NewUTXOTransaction creates a transaction with proper UTXO inputs and outputs
+func NewUTXOTransaction(sender, receiver string, amount float64, txType TransactionType, utxoSet *UTXOSet) (*Transaction, error) {
+        // Create transaction structure
+        tx := &Transaction{
+                Timestamp: time.Now(),
+                Sender:    sender,
+                Receiver:  receiver,
+                Amount:    amount,
+                Type:      txType,
+                Data:      make(map[string]interface{}),
+                Inputs:    []*TxInput{},
+                Outputs:   []*TxOutput{},
+        }
+        
+        // For genesis transactions, create a direct output to the receiver without inputs
+        if txType == TransactionTypeGenesis {
+                output := &TxOutput{
+                        Value: amount,
+                        Owner: receiver,
+                }
+                tx.Outputs = append(tx.Outputs, output)
+        } else if sender != "" && sender != "SYSTEM" {
+                // For normal transactions, find available UTXOs to use as inputs
+                spendableUTXOs, accumulated := utxoSet.FindSpendableUTXOs(sender, amount)
+                
+                if accumulated < amount {
+                        return nil, fmt.Errorf("not enough funds: got %.2f, need %.2f", accumulated, amount)
+                }
+                
+                // Create inputs from the available UTXOs
+                for _, utxo := range spendableUTXOs {
+                        input := &TxInput{
+                                TxID:        utxo.TxID,
+                                OutputIndex: utxo.TxOutputIdx,
+                                Owner:       sender,
+                        }
+                        tx.Inputs = append(tx.Inputs, input)
+                }
+                
+                // Create output to receiver
+                output := &TxOutput{
+                        Value: amount,
+                        Owner: receiver,
+                }
+                tx.Outputs = append(tx.Outputs, output)
+                
+                // If there's change, create output back to sender
+                if accumulated > amount {
+                        changeOutput := &TxOutput{
+                                Value: accumulated - amount,
+                                Owner: sender,
+                        }
+                        tx.Outputs = append(tx.Outputs, changeOutput)
+                }
+        }
+        
+        // Generate transaction ID based on its contents
+        tx.ID = tx.GenerateID()
+        
+        return tx, nil
 }
 
 // NewMessageTransaction creates a new message transaction

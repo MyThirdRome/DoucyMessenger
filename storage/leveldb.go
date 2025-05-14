@@ -23,7 +23,7 @@ const (
         LastBlockKey          = "last_block"
         TransactionPrefix     = "tx_"
         WalletPrefix          = "wallet_"
-        BalancePrefix         = "balance_"
+        BalancePrefix         = "balance_"       // Legacy - will be replaced by UTXOs
         ValidatorPrefix       = "validator_"
         MessagePrefix         = "message_"
         WhitelistPrefix       = "whitelist_"
@@ -33,6 +33,8 @@ const (
         ChannelMemberPrefix   = "channel_member_"
         PendingRewardsKey     = "pending_rewards"
         NodeCountKey          = "node_count"
+        UTXOPrefix            = "utxo_"          // For individual UTXOs
+        UTXOSetKey            = "utxo_set"       // For storing the entire UTXO set
 )
 
 // LevelDBStorage implements blockchain storage using LevelDB
@@ -229,7 +231,13 @@ func (s *LevelDBStorage) GetBalance(address string) (float64, error) {
         s.mu.RLock()
         defer s.mu.RUnlock()
 
-        // Get balance by address
+        // Try to get balance from UTXOs first (preferred method)
+        utxoBalance, err := s.GetBalanceFromUTXOs(address)
+        if err == nil && utxoBalance > 0 {
+                return utxoBalance, nil
+        }
+
+        // Get balance by address (legacy method)
         balanceKey := fmt.Sprintf("%s%s", BalancePrefix, address)
         balanceData, err := s.db.Get([]byte(balanceKey), nil)
         if err != nil {
@@ -273,6 +281,13 @@ func (s *LevelDBStorage) GetAllBalances() (map[string]float64, error) {
         s.mu.RLock()
         defer s.mu.RUnlock()
 
+        // Try to get balances from UTXOs first (preferred method)
+        utxoBalances, err := s.GetAllBalancesFromUTXOs()
+        if err == nil && len(utxoBalances) > 0 {
+                return utxoBalances, nil
+        }
+
+        // Fall back to legacy balance system
         balances := make(map[string]float64)
         iter := s.db.NewIterator(util.BytesPrefix([]byte(BalancePrefix)), nil)
         defer iter.Release()
@@ -824,4 +839,188 @@ func (s *LevelDBStorage) WriteKey(key string, data []byte) error {
         }
 
         return nil
+}
+
+// --------- UTXO Methods ---------
+
+// SaveUTXOSet saves the entire UTXO set to the database
+func (s *LevelDBStorage) SaveUTXOSet(utxoSet *models.UTXOSet) error {
+        s.mu.Lock()
+        defer s.mu.Unlock()
+
+        // Marshal UTXO set to JSON
+        utxoSetData, err := json.Marshal(utxoSet)
+        if err != nil {
+                return fmt.Errorf("failed to marshal UTXO set: %v", err)
+        }
+
+        // Save UTXO set
+        if err := s.db.Put([]byte(UTXOSetKey), utxoSetData, nil); err != nil {
+                return fmt.Errorf("failed to save UTXO set: %v", err)
+        }
+
+        return nil
+}
+
+// GetUTXOSet retrieves the entire UTXO set from the database
+func (s *LevelDBStorage) GetUTXOSet() (*models.UTXOSet, error) {
+        s.mu.RLock()
+        defer s.mu.RUnlock()
+
+        // Get UTXO set data
+        utxoSetData, err := s.db.Get([]byte(UTXOSetKey), nil)
+        if err != nil {
+                if err == leveldb.ErrNotFound {
+                        // If UTXO set not found, return a new empty set
+                        return models.NewUTXOSet(), nil
+                }
+                return nil, fmt.Errorf("failed to get UTXO set: %v", err)
+        }
+
+        // Parse UTXO set
+        var utxoSet models.UTXOSet
+        if err := json.Unmarshal(utxoSetData, &utxoSet); err != nil {
+                return nil, fmt.Errorf("failed to unmarshal UTXO set: %v", err)
+        }
+
+        return &utxoSet, nil
+}
+
+// SaveUTXO saves a single UTXO to the database
+func (s *LevelDBStorage) SaveUTXO(utxo *models.UTXO) error {
+        s.mu.Lock()
+        defer s.mu.Unlock()
+
+        // Marshal UTXO to JSON
+        utxoData, err := json.Marshal(utxo)
+        if err != nil {
+                return fmt.Errorf("failed to marshal UTXO: %v", err)
+        }
+
+        // Generate key
+        utxoKey := fmt.Sprintf("%s%s_%d", UTXOPrefix, utxo.TxID, utxo.TxOutputIdx)
+
+        // Save UTXO
+        if err := s.db.Put([]byte(utxoKey), utxoData, nil); err != nil {
+                return fmt.Errorf("failed to save UTXO: %v", err)
+        }
+
+        return nil
+}
+
+// GetUTXO retrieves a single UTXO by its ID and output index
+func (s *LevelDBStorage) GetUTXO(txID string, outputIdx int) (*models.UTXO, error) {
+        s.mu.RLock()
+        defer s.mu.RUnlock()
+
+        // Generate key
+        utxoKey := fmt.Sprintf("%s%s_%d", UTXOPrefix, txID, outputIdx)
+
+        // Get UTXO data
+        utxoData, err := s.db.Get([]byte(utxoKey), nil)
+        if err != nil {
+                if err == leveldb.ErrNotFound {
+                        return nil, fmt.Errorf("UTXO not found: %s_%d", txID, outputIdx)
+                }
+                return nil, fmt.Errorf("failed to get UTXO: %v", err)
+        }
+
+        // Parse UTXO
+        var utxo models.UTXO
+        if err := json.Unmarshal(utxoData, &utxo); err != nil {
+                return nil, fmt.Errorf("failed to unmarshal UTXO: %v", err)
+        }
+
+        return &utxo, nil
+}
+
+// GetUTXOsForAddress retrieves all UTXOs owned by an address
+func (s *LevelDBStorage) GetUTXOsForAddress(address string) ([]*models.UTXO, error) {
+        s.mu.RLock()
+        defer s.mu.RUnlock()
+
+        utxos := []*models.UTXO{}
+        iter := s.db.NewIterator(util.BytesPrefix([]byte(UTXOPrefix)), nil)
+        defer iter.Release()
+
+        for iter.Next() {
+                var utxo models.UTXO
+                if err := json.Unmarshal(iter.Value(), &utxo); err != nil {
+                        return nil, fmt.Errorf("failed to unmarshal UTXO: %v", err)
+                }
+                
+                if utxo.Owner == address && !utxo.IsSpent {
+                        utxos = append(utxos, &utxo)
+                }
+        }
+
+        if err := iter.Error(); err != nil {
+                return nil, fmt.Errorf("error iterating UTXOs: %v", err)
+        }
+
+        return utxos, nil
+}
+
+// GetBalanceFromUTXOs calculates the balance of an address from UTXOs
+func (s *LevelDBStorage) GetBalanceFromUTXOs(address string) (float64, error) {
+        utxos, err := s.GetUTXOsForAddress(address)
+        if err != nil {
+                return 0, err
+        }
+
+        var balance float64
+        for _, utxo := range utxos {
+                balance += utxo.Amount
+        }
+
+        return balance, nil
+}
+
+// GetAllBalancesFromUTXOs retrieves balances for all addresses from UTXOs
+func (s *LevelDBStorage) GetAllBalancesFromUTXOs() (map[string]float64, error) {
+        // Try to get the full UTXO set first (more efficient)
+        utxoSet, err := s.GetUTXOSet()
+        if err == nil {
+                return utxoSet.GetAllAddressBalances(), nil
+        }
+
+        // If that fails, iterate through all UTXOs
+        s.mu.RLock()
+        defer s.mu.RUnlock()
+
+        balances := make(map[string]float64)
+        iter := s.db.NewIterator(util.BytesPrefix([]byte(UTXOPrefix)), nil)
+        defer iter.Release()
+
+        for iter.Next() {
+                var utxo models.UTXO
+                if err := json.Unmarshal(iter.Value(), &utxo); err != nil {
+                        return nil, fmt.Errorf("failed to unmarshal UTXO: %v", err)
+                }
+                
+                if !utxo.IsSpent {
+                        balances[utxo.Owner] += utxo.Amount
+                }
+        }
+
+        if err := iter.Error(); err != nil {
+                return nil, fmt.Errorf("error iterating UTXOs: %v", err)
+        }
+
+        return balances, nil
+}
+
+// MarkUTXOSpent marks a UTXO as spent
+func (s *LevelDBStorage) MarkUTXOSpent(txID string, outputIdx int) error {
+        // Get the UTXO
+        utxo, err := s.GetUTXO(txID, outputIdx)
+        if err != nil {
+                return err
+        }
+
+        // Mark as spent
+        utxo.IsSpent = true
+
+        // Save the updated UTXO
+        return s.SaveUTXO(utxo)
 }

@@ -51,6 +51,11 @@ func (m *Message) GetTimestamp() time.Time {
         return m.Timestamp
 }
 
+// GetReplyToID returns the ID of the message this is replying to
+func (m *Message) GetReplyToID() string {
+        return m.ReplyTo
+}
+
 // GetSignature returns the message signature
 func (m *Message) GetSignature() string {
         return m.Signature

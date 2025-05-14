@@ -139,6 +139,13 @@ func (bc *Blockchain) GetBalance(address string) (float64, error) {
         bc.mu.RLock()
         defer bc.mu.RUnlock()
 
+        // First try to get balance from UTXOs (preferred)
+        utxoBalance, err := bc.storage.GetBalanceFromUTXOs(address)
+        if err == nil && utxoBalance > 0 {
+                return utxoBalance, nil
+        }
+
+        // Fall back to legacy method
         balance, err := bc.storage.GetBalance(address)
         if err != nil {
                 return 0, err
@@ -151,7 +158,13 @@ func (bc *Blockchain) GetAllBalances() (map[string]float64, error) {
         bc.mu.RLock()
         defer bc.mu.RUnlock()
         
-        // Get all balances from storage
+        // First try to get all balances from UTXOs (preferred method)
+        utxoBalances, err := bc.storage.GetAllBalancesFromUTXOs()
+        if err == nil && len(utxoBalances) > 0 {
+                return utxoBalances, nil
+        }
+        
+        // Fall back to legacy method
         return bc.storage.GetAllBalances()
 }
 
@@ -165,7 +178,94 @@ func (bc *Blockchain) UpdateBalance(address string, balance float64) error {
                 return errors.New("invalid address format")
         }
         
-        // Update the balance in storage
+        // Get current balance to see if we're increasing or decreasing
+        currentBalance, err := bc.storage.GetBalance(address)
+        if err != nil {
+                currentBalance = 0
+        }
+        
+        // Check if we also have UTXOs
+        currentUTXOs, err := bc.storage.GetUTXOsForAddress(address)
+        if err != nil {
+                utils.Error("Failed to get UTXOs for address %s: %v", address, err)
+        }
+        
+        // Only process with UTXOs if this is an increase in balance
+        // (Simple balance adjustments like decreases are still handled the legacy way)
+        if balance > currentBalance && len(currentUTXOs) >= 0 {
+                // Mark all existing UTXOs as spent
+                for _, utxo := range currentUTXOs {
+                        if !utxo.IsSpent {
+                                if err := bc.storage.MarkUTXOSpent(utxo.TxID, utxo.TxOutputIdx); err != nil {
+                                        utils.Error("Failed to mark UTXO as spent: %v", err)
+                                }
+                        }
+                }
+                
+                // Create a system transaction for this balance update
+                balanceUpdateTx := models.NewTransaction("SYSTEM", address, balance, models.TransactionTypeCoin)
+                
+                // Add an output for the new balance
+                output := &models.TxOutput{
+                        Value: balance,
+                        Owner: address,
+                }
+                balanceUpdateTx.Outputs = append(balanceUpdateTx.Outputs, output)
+                
+                // Create a new block with this transaction
+                block := models.NewBlock([]*models.Transaction{balanceUpdateTx}, bc.currentBlock)
+                
+                // Save the block
+                if err := bc.storage.SaveBlock(block); err != nil {
+                        utils.Error("Failed to save block for balance update: %v", err)
+                }
+                bc.currentBlock = block
+                
+                // Save the transaction
+                if err := bc.storage.SaveTransaction(balanceUpdateTx); err != nil {
+                        utils.Error("Failed to save balance update transaction: %v", err)
+                }
+                
+                // Create new UTXO
+                newUTXO := &models.UTXO{
+                        TxID:        balanceUpdateTx.ID,
+                        TxOutputIdx: 0,
+                        Amount:      balance,
+                        Owner:       address,
+                        IsSpent:     false,
+                        BlockHeight: block.Height,
+                }
+                
+                // Save the UTXO
+                if err := bc.storage.SaveUTXO(newUTXO); err != nil {
+                        utils.Error("Failed to save UTXO for balance update: %v", err)
+                }
+                
+                // Update UTXO set
+                utxoSet, err := bc.storage.GetUTXOSet()
+                if err != nil {
+                        utils.Error("Failed to get UTXO set: %v", err)
+                        utxoSet = models.NewUTXOSet()
+                }
+                
+                // Mark existing UTXOs as spent in the set
+                for _, utxo := range currentUTXOs {
+                        utxoKey := fmt.Sprintf("%s:%d", utxo.TxID, utxo.TxOutputIdx)
+                        if utxoInSet, exists := utxoSet.UTXOs[utxoKey]; exists {
+                                utxoInSet.IsSpent = true
+                        }
+                }
+                
+                // Add new UTXO to the set
+                utxoSet.AddUTXO(newUTXO)
+                
+                // Save updated UTXO set
+                if err := bc.storage.SaveUTXOSet(utxoSet); err != nil {
+                        utils.Error("Failed to save UTXO set: %v", err)
+                }
+        }
+        
+        // Always update the balance in storage for backward compatibility
         return bc.storage.UpdateBalance(address, balance)
 }
 
@@ -199,16 +299,6 @@ func (bc *Blockchain) ProcessTransaction(tx *models.Transaction) error {
                 return nil
         }
 
-        // Check if sender has enough balance
-        balance, err := bc.storage.GetBalance(from)
-        if err != nil {
-                return fmt.Errorf("failed to get sender balance: %v", err)
-        }
-
-        if balance < amount {
-                return fmt.Errorf("insufficient balance: %f < %f", balance, amount)
-        }
-
         // Create new block with this transaction
         block := models.NewBlock([]*models.Transaction{tx}, bc.currentBlock)
         
@@ -217,20 +307,127 @@ func (bc *Blockchain) ProcessTransaction(tx *models.Transaction) error {
                 return fmt.Errorf("failed to save block: %v", err)
         }
         
-        // Update balances
-        if err := bc.storage.UpdateBalance(from, balance-amount); err != nil {
-                return fmt.Errorf("failed to update sender balance: %v", err)
-        }
-        
-        toBalance, err := bc.storage.GetBalance(to)
-        if err != nil {
-                toBalance = 0
-        }
-        
-        if err := bc.storage.UpdateBalance(to, toBalance+amount); err != nil {
-                // Rollback the sender's balance if receiver update fails
-                _ = bc.storage.UpdateBalance(from, balance)
-                return fmt.Errorf("failed to update receiver balance: %v", err)
+        // For UTXO model, process inputs and outputs
+        if len(tx.Inputs) > 0 {
+                // Process UTXO inputs by marking them as spent
+                for _, input := range tx.Inputs {
+                        if err := bc.storage.MarkUTXOSpent(input.TxID, input.OutputIndex); err != nil {
+                                utils.Error("Failed to mark UTXO as spent: %v", err)
+                                // Continue processing even if this fails
+                        }
+                }
+                
+                // Create new UTXOs from outputs
+                for i, output := range tx.Outputs {
+                        utxo := &models.UTXO{
+                                TxID:        tx.ID,
+                                TxOutputIdx: i,
+                                Amount:      output.Value,
+                                Owner:       output.Owner,
+                                IsSpent:     false,
+                                BlockHeight: block.Height,
+                        }
+                        
+                        if err := bc.storage.SaveUTXO(utxo); err != nil {
+                                utils.Error("Failed to save UTXO: %v", err)
+                                // Continue processing even if this fails
+                        }
+                }
+                
+                // Update UTXO set
+                utxoSet, err := bc.storage.GetUTXOSet()
+                if err != nil {
+                        utils.Error("Failed to get UTXO set: %v", err)
+                        utxoSet = models.NewUTXOSet()
+                }
+                
+                // Process inputs (mark as spent in the set)
+                for _, input := range tx.Inputs {
+                        utxoKey := fmt.Sprintf("%s:%d", input.TxID, input.OutputIndex)
+                        if utxo, exists := utxoSet.UTXOs[utxoKey]; exists {
+                                utxo.IsSpent = true
+                        }
+                }
+                
+                // Process outputs (add to the set)
+                for i, output := range tx.Outputs {
+                        utxo := &models.UTXO{
+                                TxID:        tx.ID,
+                                TxOutputIdx: i,
+                                Amount:      output.Value,
+                                Owner:       output.Owner,
+                                IsSpent:     false,
+                                BlockHeight: block.Height,
+                        }
+                        utxoSet.AddUTXO(utxo)
+                }
+                
+                if err := bc.storage.SaveUTXOSet(utxoSet); err != nil {
+                        utils.Error("Failed to save UTXO set: %v", err)
+                        // Continue processing even if this fails
+                }
+        } else {
+                // Backward compatibility: Update balances directly
+                // Check if sender has enough balance
+                balance, err := bc.storage.GetBalance(from)
+                if err != nil {
+                        return fmt.Errorf("failed to get sender balance: %v", err)
+                }
+
+                if balance < amount {
+                        return fmt.Errorf("insufficient balance: %f < %f", balance, amount)
+                }
+                
+                // Update balances
+                if err := bc.storage.UpdateBalance(from, balance-amount); err != nil {
+                        return fmt.Errorf("failed to update sender balance: %v", err)
+                }
+                
+                toBalance, err := bc.storage.GetBalance(to)
+                if err != nil {
+                        toBalance = 0
+                }
+                
+                if err := bc.storage.UpdateBalance(to, toBalance+amount); err != nil {
+                        // Rollback the sender's balance if receiver update fails
+                        _ = bc.storage.UpdateBalance(from, balance)
+                        return fmt.Errorf("failed to update receiver balance: %v", err)
+                }
+                
+                // Also create UTXOs for backward compatibility
+                // Mark old balances as spent
+                utxos, _ := bc.storage.GetUTXOsForAddress(from)
+                for _, utxo := range utxos {
+                        if !utxo.IsSpent {
+                                _ = bc.storage.MarkUTXOSpent(utxo.TxID, utxo.TxOutputIdx)
+                        }
+                }
+                
+                // Create new UTXO for receiver
+                if amount > 0 {
+                        receiverUTXO := &models.UTXO{
+                                TxID:        tx.ID,
+                                TxOutputIdx: 0,
+                                Amount:      amount,
+                                Owner:       to,
+                                IsSpent:     false,
+                                BlockHeight: block.Height,
+                        }
+                        _ = bc.storage.SaveUTXO(receiverUTXO)
+                }
+                
+                // Create change UTXO for sender if needed
+                if balance > amount {
+                        changeUTXO := &models.UTXO{
+                                TxID:        tx.ID,
+                                TxOutputIdx: 1,
+                                Amount:      balance - amount,
+                                Owner:       from,
+                                IsSpent:     false,
+                                BlockHeight: block.Height,
+                        }
+                        _ = bc.storage.SaveUTXO(changeUTXO)
+                }
         }
         
         // Save the transaction
@@ -258,17 +455,59 @@ func (bc *Blockchain) SendCoins(from, to string, amount float64) error {
                 return errors.New("invalid address format")
         }
 
-        // Check if sender has enough balance
-        balance, err := bc.storage.GetBalance(from)
+        // Get UTXO set
+        utxoSet, err := bc.storage.GetUTXOSet()
         if err != nil {
-                return err
+                utils.Error("Failed to get UTXO set, falling back to direct balance: %v", err)
+                utxoSet = models.NewUTXOSet()
         }
-        if balance < amount {
-                return fmt.Errorf("insufficient balance: %.10f", balance)
+        
+        // Try to use UTXO model first
+        var tx *models.Transaction
+        
+        // Check if we have any UTXOs
+        utxos := utxoSet.GetUTXOsForAddress(from)
+        if len(utxos) > 0 {
+                // Use the UTXO model
+                tx, err = models.NewUTXOTransaction(from, to, amount, models.TransactionTypeCoin, utxoSet)
+                if err != nil {
+                        // Fall back to legacy transaction if UTXO creation fails
+                        utils.Error("UTXO transaction creation failed: %v, falling back to legacy", err)
+                        tx = nil
+                }
         }
+        
+        // Fall back to legacy model if UTXO failed or no UTXOs found
+        if tx == nil {
+                // Check if sender has enough balance
+                balance, err := bc.storage.GetBalance(from)
+                if err != nil {
+                        return err
+                }
+                if balance < amount {
+                        return fmt.Errorf("insufficient balance: %.10f", balance)
+                }
 
-        // Create transaction
-        tx := models.NewTransaction(from, to, amount, models.TransactionTypeCoin)
+                // Create transaction (legacy model)
+                tx = models.NewTransaction(from, to, amount, models.TransactionTypeCoin)
+                
+                // Add output records for UTXO tracking
+                // Output to recipient
+                recipientOutput := &models.TxOutput{
+                        Value: amount,
+                        Owner: to,
+                }
+                tx.Outputs = append(tx.Outputs, recipientOutput)
+                
+                // Change output back to sender if needed
+                if balance > amount {
+                        changeOutput := &models.TxOutput{
+                                Value: balance - amount,
+                                Owner: from,
+                        }
+                        tx.Outputs = append(tx.Outputs, changeOutput)
+                }
+        }
         
         // Create new block
         block := models.NewBlock([]*models.Transaction{tx}, bc.currentBlock)
@@ -278,19 +517,95 @@ func (bc *Blockchain) SendCoins(from, to string, amount float64) error {
                 return err
         }
         bc.currentBlock = block
-
-        // Update balances
-        if err := bc.storage.UpdateBalance(from, balance-amount); err != nil {
-                return err
+        
+        if len(tx.Inputs) > 0 {
+                // Process UTXO transaction
+                // Mark inputs as spent
+                for _, input := range tx.Inputs {
+                        if err := bc.storage.MarkUTXOSpent(input.TxID, input.OutputIndex); err != nil {
+                                utils.Error("Failed to mark UTXO as spent: %v", err)
+                        }
+                }
+                
+                // Create new UTXOs from outputs
+                for i, output := range tx.Outputs {
+                        utxo := &models.UTXO{
+                                TxID:        tx.ID,
+                                TxOutputIdx: i,
+                                Amount:      output.Value,
+                                Owner:       output.Owner,
+                                IsSpent:     false,
+                                BlockHeight: block.Height,
+                        }
+                        
+                        if err := bc.storage.SaveUTXO(utxo); err != nil {
+                                utils.Error("Failed to save UTXO: %v", err)
+                        }
+                }
+                
+                // Update UTXO set
+                for _, input := range tx.Inputs {
+                        utxoKey := fmt.Sprintf("%s:%d", input.TxID, input.OutputIndex)
+                        if utxo, exists := utxoSet.UTXOs[utxoKey]; exists {
+                                utxo.IsSpent = true
+                        }
+                }
+                
+                for i, output := range tx.Outputs {
+                        utxo := &models.UTXO{
+                                TxID:        tx.ID,
+                                TxOutputIdx: i,
+                                Amount:      output.Value,
+                                Owner:       output.Owner,
+                                IsSpent:     false,
+                                BlockHeight: block.Height,
+                        }
+                        utxoSet.AddUTXO(utxo)
+                }
+                
+                if err := bc.storage.SaveUTXOSet(utxoSet); err != nil {
+                        utils.Error("Failed to save UTXO set: %v", err)
+                }
+        } else {
+                // Legacy transaction - update balances directly
+                balance, _ := bc.storage.GetBalance(from)
+                toBalance, _ := bc.storage.GetBalance(to)
+                
+                // Update balances
+                if err := bc.storage.UpdateBalance(from, balance-amount); err != nil {
+                        return err
+                }
+                
+                if err := bc.storage.UpdateBalance(to, toBalance+amount); err != nil {
+                        return err
+                }
+                
+                // Also create UTXOs for backward compatibility
+                // Mark old UTXOs as spent
+                oldUtxos, _ := bc.storage.GetUTXOsForAddress(from)
+                for _, utxo := range oldUtxos {
+                        if !utxo.IsSpent {
+                                _ = bc.storage.MarkUTXOSpent(utxo.TxID, utxo.TxOutputIdx)
+                        }
+                }
+                
+                // Create new UTXOs
+                for i, output := range tx.Outputs {
+                        utxo := &models.UTXO{
+                                TxID:        tx.ID,
+                                TxOutputIdx: i,
+                                Amount:      output.Value,
+                                Owner:       output.Owner,
+                                IsSpent:     false,
+                                BlockHeight: block.Height,
+                        }
+                        _ = bc.storage.SaveUTXO(utxo)
+                }
         }
         
-        toBalance, err := bc.storage.GetBalance(to)
-        if err != nil {
-                toBalance = 0
-        }
-        
-        if err := bc.storage.UpdateBalance(to, toBalance+amount); err != nil {
-                return err
+        // Save the transaction
+        if err := bc.storage.SaveTransaction(tx); err != nil {
+                utils.Error("Failed to save transaction: %v", err)
         }
 
         return nil
@@ -379,10 +694,76 @@ func (bc *Blockchain) ProcessMessageResponse(response *messaging.Message) error 
                 senderReward := SenderReward
                 receiverReward := ReceiverReward
                 
-                // Update balances for sender and receiver
+                // The actual participants
                 originalSender := response.Receiver // The person who sent the original message
                 originalReceiver := response.Sender // The person who is now responding
                 
+                // Create a rewards transaction
+                rewardTx := models.NewTransaction("SYSTEM", "REWARDS", 0, models.TransactionTypeMessageReward)
+                rewardTx.SetData("messageID", response.GetReplyToID())
+                
+                // Add outputs for UTXO tracking
+                // Output to original sender
+                senderOutput := &models.TxOutput{
+                        Value: senderReward,
+                        Owner: originalSender,
+                }
+                rewardTx.Outputs = append(rewardTx.Outputs, senderOutput)
+                
+                // Output to original receiver
+                receiverOutput := &models.TxOutput{
+                        Value: receiverReward,
+                        Owner: originalReceiver,
+                }
+                rewardTx.Outputs = append(rewardTx.Outputs, receiverOutput)
+                
+                // Create new block with reward transaction
+                block := models.NewBlock([]*models.Transaction{rewardTx}, bc.currentBlock)
+                
+                // Save block
+                if err := bc.storage.SaveBlock(block); err != nil {
+                        return fmt.Errorf("failed to save reward block: %v", err)
+                }
+                bc.currentBlock = block
+                
+                // Save the transaction
+                if err := bc.storage.SaveTransaction(rewardTx); err != nil {
+                        utils.Error("Failed to save reward transaction: %v", err)
+                }
+                
+                // Process UTXO rewards
+                // Get UTXO set
+                utxoSet, err := bc.storage.GetUTXOSet()
+                if err != nil {
+                        utils.Error("Failed to get UTXO set: %v", err)
+                        utxoSet = models.NewUTXOSet()
+                }
+                
+                // Create new UTXOs from outputs
+                for i, output := range rewardTx.Outputs {
+                        utxo := &models.UTXO{
+                                TxID:        rewardTx.ID,
+                                TxOutputIdx: i,
+                                Amount:      output.Value,
+                                Owner:       output.Owner,
+                                IsSpent:     false,
+                                BlockHeight: block.Height,
+                        }
+                        
+                        if err := bc.storage.SaveUTXO(utxo); err != nil {
+                                utils.Error("Failed to save reward UTXO: %v", err)
+                        }
+                        
+                        // Also add to UTXO set
+                        utxoSet.AddUTXO(utxo)
+                }
+                
+                // Save updated UTXO set
+                if err := bc.storage.SaveUTXOSet(utxoSet); err != nil {
+                        utils.Error("Failed to save UTXO set: %v", err)
+                }
+                
+                // Legacy: Update balances directly too for backward compatibility
                 // Get current balances
                 senderBalance, err := bc.storage.GetBalance(originalSender)
                 if err != nil {
@@ -396,11 +777,11 @@ func (bc *Blockchain) ProcessMessageResponse(response *messaging.Message) error 
                 
                 // Update balances
                 if err := bc.storage.UpdateBalance(originalSender, senderBalance+senderReward); err != nil {
-                        return err
+                        utils.Error("Failed to update sender balance: %v", err)
                 }
                 
                 if err := bc.storage.UpdateBalance(originalReceiver, receiverBalance+receiverReward); err != nil {
-                        return err
+                        utils.Error("Failed to update receiver balance: %v", err)
                 }
                 
                 // Also reward validators with their share
@@ -724,6 +1105,20 @@ func (bc *Blockchain) GenesisAllocation(address string, amount float64) error {
                 return fmt.Errorf("address %s already has funds (%f DOU)", address, existingBalance)
         }
         
+        // Also check for existing UTXOs
+        utxos, err := bc.storage.GetUTXOsForAddress(address)
+        if err == nil && len(utxos) > 0 {
+                var utxoBalance float64
+                for _, utxo := range utxos {
+                        if !utxo.IsSpent {
+                                utxoBalance += utxo.Amount
+                        }
+                }
+                if utxoBalance > 0 {
+                        return fmt.Errorf("address %s already has funds (%f DOU) in UTXOs", address, utxoBalance)
+                }
+        }
+        
         // Get the last block
         lastBlock, err := bc.storage.GetLastBlock()
         if err != nil {
@@ -731,7 +1126,14 @@ func (bc *Blockchain) GenesisAllocation(address string, amount float64) error {
         }
         
         // Create genesis transaction
-        tx := models.NewTransaction("", address, amount, models.TransactionTypeGenesis)
+        tx := models.NewTransaction("SYSTEM", address, amount, models.TransactionTypeGenesis)
+        
+        // Add output for UTXO tracking
+        output := &models.TxOutput{
+                Value: amount,
+                Owner: address,
+        }
+        tx.Outputs = append(tx.Outputs, output)
         
         // Add to a new block
         block := models.NewBlock([]*models.Transaction{tx}, lastBlock)
@@ -740,8 +1142,42 @@ func (bc *Blockchain) GenesisAllocation(address string, amount float64) error {
         if err := bc.storage.SaveBlock(block); err != nil {
                 return fmt.Errorf("failed to save block with genesis allocation: %v", err)
         }
+        bc.currentBlock = block
         
-        // Update balance
+        // Save the transaction
+        if err := bc.storage.SaveTransaction(tx); err != nil {
+                utils.Error("Failed to save genesis transaction: %v", err)
+        }
+        
+        // Create UTXO for the genesis funds
+        utxo := &models.UTXO{
+                TxID:        tx.ID,
+                TxOutputIdx: 0,
+                Amount:      amount,
+                Owner:       address,
+                IsSpent:     false,
+                BlockHeight: block.Height,
+        }
+        
+        // Save UTXO
+        if err := bc.storage.SaveUTXO(utxo); err != nil {
+                utils.Error("Failed to save genesis UTXO: %v", err)
+        }
+        
+        // Update UTXO set
+        utxoSet, err := bc.storage.GetUTXOSet()
+        if err != nil {
+                utils.Error("Failed to get UTXO set: %v", err)
+                utxoSet = models.NewUTXOSet()
+        }
+        
+        utxoSet.AddUTXO(utxo)
+        
+        if err := bc.storage.SaveUTXOSet(utxoSet); err != nil {
+                utils.Error("Failed to save UTXO set: %v", err)
+        }
+        
+        // Legacy: Update balance directly too for backward compatibility
         if err := bc.storage.UpdateBalance(address, amount); err != nil {
                 return fmt.Errorf("failed to update balance: %v", err)
         }
@@ -755,6 +1191,95 @@ func (bc *Blockchain) GenesisAllocation(address string, amount float64) error {
 }
 
 // Helper methods
+
+// ConvertLegacyBalancesToUTXOs converts all legacy balances to UTXOs in the system
+func (bc *Blockchain) ConvertLegacyBalancesToUTXOs() error {
+        bc.mu.Lock()
+        defer bc.mu.Unlock()
+        
+        // Get all balances from legacy system
+        balances, err := bc.storage.GetAllBalances()
+        if err != nil {
+                return fmt.Errorf("failed to get all balances: %v", err)
+        }
+        
+        utils.Info("Converting %d legacy balances to UTXO format", len(balances))
+        
+        // Create a transaction for each balance
+        for address, balance := range balances {
+                // Check if we already have UTXOs for this address
+                utxos, err := bc.storage.GetUTXOsForAddress(address)
+                if err == nil && len(utxos) > 0 {
+                        utils.Info("Address %s already has %d UTXOs, skipping conversion", address, len(utxos))
+                        continue
+                }
+                
+                // Skip zero balances
+                if balance <= 0 {
+                        continue
+                }
+                
+                // Create a system transaction for this balance conversion
+                conversionTx := models.NewTransaction("SYSTEM", address, balance, models.TransactionTypeCoin)
+                conversionTx.SetData("info", "Legacy balance conversion to UTXO")
+                
+                // Add an output for the balance
+                output := &models.TxOutput{
+                        Value: balance,
+                        Owner: address,
+                }
+                conversionTx.Outputs = append(conversionTx.Outputs, output)
+                
+                // Create a new block with this transaction
+                block := models.NewBlock([]*models.Transaction{conversionTx}, bc.currentBlock)
+                
+                // Save the block
+                if err := bc.storage.SaveBlock(block); err != nil {
+                        utils.Error("Failed to save block for balance conversion: %v", err)
+                        continue
+                }
+                bc.currentBlock = block
+                
+                // Save the transaction
+                if err := bc.storage.SaveTransaction(conversionTx); err != nil {
+                        utils.Error("Failed to save conversion transaction: %v", err)
+                }
+                
+                // Create new UTXO
+                newUTXO := &models.UTXO{
+                        TxID:        conversionTx.ID,
+                        TxOutputIdx: 0,
+                        Amount:      balance,
+                        Owner:       address,
+                        IsSpent:     false,
+                        BlockHeight: block.Height,
+                }
+                
+                // Save the UTXO
+                if err := bc.storage.SaveUTXO(newUTXO); err != nil {
+                        utils.Error("Failed to save UTXO for balance conversion: %v", err)
+                        continue
+                }
+                
+                // Update UTXO set
+                utxoSet, err := bc.storage.GetUTXOSet()
+                if err != nil {
+                        utxoSet = models.NewUTXOSet()
+                }
+                
+                // Add new UTXO to the set
+                utxoSet.AddUTXO(newUTXO)
+                
+                // Save updated UTXO set
+                if err := bc.storage.SaveUTXOSet(utxoSet); err != nil {
+                        utils.Error("Failed to save UTXO set: %v", err)
+                }
+                
+                utils.Info("Converted balance of %.2f DOU for address %s to UTXO format", balance, address)
+        }
+        
+        return nil
+}
 
 // isWhitelisted checks if the sender has whitelisted the receiver
 func (bc *Blockchain) isWhitelisted(from, to string) bool {
@@ -864,9 +1389,11 @@ func (bc *Blockchain) cleanupRateLimits(address string) {
 func (bc *Blockchain) distributeValidatorRewards(amount float64) error {
         // Count active validators
         activeValidators := 0
-        for _, v := range bc.validators {
+        var eligibleValidators []string
+        for addr, v := range bc.validators {
                 if v.IsEligible() {
                         activeValidators++
+                        eligibleValidators = append(eligibleValidators, addr)
                 }
         }
 
@@ -877,7 +1404,65 @@ func (bc *Blockchain) distributeValidatorRewards(amount float64) error {
         // Calculate reward per validator
         rewardPerValidator := amount / float64(activeValidators)
 
-        // Distribute rewards
+        // Create a validator reward transaction
+        validatorTx := models.NewTransaction("SYSTEM", "VALIDATOR_REWARDS", amount, models.TransactionTypeValidatorReward)
+        
+        // Add outputs for each validator
+        for _, addr := range eligibleValidators {
+                validatorOutput := &models.TxOutput{
+                        Value: rewardPerValidator,
+                        Owner: addr,
+                }
+                validatorTx.Outputs = append(validatorTx.Outputs, validatorOutput)
+        }
+        
+        // Create new block with validator reward transaction
+        block := models.NewBlock([]*models.Transaction{validatorTx}, bc.currentBlock)
+        
+        // Save block
+        if err := bc.storage.SaveBlock(block); err != nil {
+                return fmt.Errorf("failed to save validator reward block: %v", err)
+        }
+        bc.currentBlock = block
+        
+        // Save the transaction
+        if err := bc.storage.SaveTransaction(validatorTx); err != nil {
+                utils.Error("Failed to save validator reward transaction: %v", err)
+        }
+        
+        // Process UTXO rewards
+        // Get UTXO set
+        utxoSet, err := bc.storage.GetUTXOSet()
+        if err != nil {
+                utils.Error("Failed to get UTXO set: %v", err)
+                utxoSet = models.NewUTXOSet()
+        }
+        
+        // Create new UTXOs from outputs
+        for i, output := range validatorTx.Outputs {
+                utxo := &models.UTXO{
+                        TxID:        validatorTx.ID,
+                        TxOutputIdx: i,
+                        Amount:      output.Value,
+                        Owner:       output.Owner,
+                        IsSpent:     false,
+                        BlockHeight: block.Height,
+                }
+                
+                if err := bc.storage.SaveUTXO(utxo); err != nil {
+                        utils.Error("Failed to save validator reward UTXO: %v", err)
+                }
+                
+                // Also add to UTXO set
+                utxoSet.AddUTXO(utxo)
+        }
+        
+        // Save updated UTXO set
+        if err := bc.storage.SaveUTXOSet(utxoSet); err != nil {
+                utils.Error("Failed to save UTXO set: %v", err)
+        }
+        
+        // Legacy: Update balances directly for backward compatibility
         for addr, v := range bc.validators {
                 if v.IsEligible() {
                         // Get current balance
@@ -888,7 +1473,7 @@ func (bc *Blockchain) distributeValidatorRewards(amount float64) error {
 
                         // Update balance
                         if err := bc.storage.UpdateBalance(addr, balance+rewardPerValidator); err != nil {
-                                return err
+                                utils.Error("Failed to update validator balance: %v", err)
                         }
                 }
         }
@@ -1098,6 +1683,74 @@ func (bc *Blockchain) AddBlock(block *models.Block) error {
         utils.Info("Added block %s at height %d with %d transactions", 
                 block.GetHash(), block.GetHeight(), len(block.GetTransactions()))
 
+        return nil
+}
+
+// ConvertLegacyBalancesToUTXOs converts legacy account balances to the UTXO model
+func (bc *Blockchain) ConvertLegacyBalancesToUTXOs() error {
+        bc.mu.Lock()
+        defer bc.mu.Unlock()
+
+        fmt.Println("Starting balance conversion process...")
+        
+        // Get all balances from legacy storage
+        balances, err := bc.storage.GetAllBalances()
+        if err != nil {
+                return fmt.Errorf("failed to retrieve balances: %v", err)
+        }
+
+        // Create a new UTXO set
+        utxoSet := models.NewUTXOSet()
+        
+        // Track converted addresses for logging
+        var convertedAddresses []string
+        var totalConverted float64
+
+        // Generate conversion transaction for each address with non-zero balance
+        txID := utils.GenerateID() // Single transaction ID for all conversions
+        outputIdx := 0 // Start with output index 0
+        
+        for address, balance := range balances {
+                if balance <= 0 {
+                        continue // Skip zero or negative balances
+                }
+                
+                // Create a new UTXO for this address
+                utxo := &models.UTXO{
+                        TxID:        txID,
+                        TxOutputIdx: outputIdx,
+                        Amount:      balance,
+                        Owner:       address,
+                        IsSpent:     false,
+                        BlockHeight: bc.currentBlock.Height,
+                }
+                
+                // Add the UTXO to the set
+                utxoKey := txID + ":" + fmt.Sprintf("%d", outputIdx)
+                utxoSet.UTXOs[utxoKey] = utxo
+                
+                // Save the individual UTXO
+                err = bc.storage.SaveUTXO(utxo)
+                if err != nil {
+                        return fmt.Errorf("failed to save UTXO for address %s: %v", address, err)
+                }
+                
+                // Log the conversion
+                convertedAddresses = append(convertedAddresses, address)
+                totalConverted += balance
+                outputIdx++
+        }
+        
+        // Save the UTXO set
+        err = bc.storage.SaveUTXOSet(utxoSet)
+        if err != nil {
+                return fmt.Errorf("failed to save UTXO set: %v", err)
+        }
+        
+        // Log conversion results
+        fmt.Printf("Conversion completed successfully!\n")
+        fmt.Printf("Converted %d addresses with a total of %.2f DOU\n", len(convertedAddresses), totalConverted)
+        
         return nil
 }
 

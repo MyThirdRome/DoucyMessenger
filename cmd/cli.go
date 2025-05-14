@@ -202,6 +202,8 @@ func (cli *CLI) processCommand(cmd string) {
                 cli.createChannel(args[1], args[2], isPublic)
         case "status":
                 cli.showStatus()
+        case "utxoconvert":
+                cli.convertToUTXOs()
         case "peers":
                 cli.showPeers()
         case "addpeer":
@@ -1234,6 +1236,23 @@ func (cli *CLI) decryptMessage(address, messageID, privateKeyHex string) {
         fmt.Printf("From: %s\n", message.GetSender())
         fmt.Printf("Content: %s\n", decrypted)
         fmt.Printf("Timestamp: %s\n", message.GetTimestamp().Format("2006-01-02 15:04:05"))
+}
+
+// convertToUTXOs converts legacy balances to the UTXO model
+func (cli *CLI) convertToUTXOs() {
+        fmt.Println("Converting legacy balances to UTXO format...")
+        fmt.Println("This process may take some time depending on the number of addresses in the system.")
+        
+        // Call the blockchain conversion method
+        err := cli.blockchain.ConvertLegacyBalancesToUTXOs()
+        if err != nil {
+                fmt.Printf("Error converting balances: %v\n", err)
+                return
+        }
+        
+        fmt.Println("Conversion completed successfully!")
+        fmt.Println("All balances have been converted to UTXOs and are now stored in the blockchain.")
+        fmt.Println("You can verify balances using the 'getbalance' command.")
 }
 
 // startNetworkLog shows a continuous log of network activity
