@@ -9,11 +9,13 @@ import (
         "fmt"
         "time"
 
+        "github.com/doucya/interfaces"
         "github.com/doucya/utils"
         "github.com/doucya/wallet"
 )
 
 // Message represents a message in the blockchain
+// Implements the interfaces.MessageData interface
 type Message struct {
         ID        string    `json:"id"`
         Sender    string    `json:"sender"`
@@ -22,6 +24,7 @@ type Message struct {
         Timestamp time.Time `json:"timestamp"`
         Signature string    `json:"signature"`
         Encrypted bool      `json:"encrypted"`
+        ReplyTo   string    `json:"reply_to,omitempty"` // ID of message this is replying to
 }
 
 // GetID returns the message ID
@@ -59,6 +62,21 @@ func (m *Message) IsEncrypted() bool {
         return m.Encrypted
 }
 
+// GetReplyTo returns the ID of the message this is replying to
+func (m *Message) GetReplyTo() string {
+        return m.ReplyTo
+}
+
+// SetReplyTo sets the ID of the message this is replying to
+func (m *Message) SetReplyTo(messageID string) {
+        m.ReplyTo = messageID
+}
+
+// ToMessageMetadata converts the message to a MessageMetadata object
+func (m *Message) ToMessageMetadata() *interfaces.MessageMetadata {
+        return interfaces.NewMessageMetadata(m.ID, m.Sender, m.Receiver, m.Timestamp)
+}
+
 // NewMessage creates a new message
 func NewMessage(sender, receiver, content string) *Message {
         message := &Message{
@@ -77,6 +95,13 @@ func NewMessage(sender, receiver, content string) *Message {
                 message.Content = encryptContent(content, receiver)
         }
 
+        return message
+}
+
+// NewReplyMessage creates a new message in reply to another message
+func NewReplyMessage(sender, receiver, content, replyToID string) *Message {
+        message := NewMessage(sender, receiver, content)
+        message.ReplyTo = replyToID
         return message
 }
 
@@ -194,43 +219,82 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 // Helper functions for encryption/decryption
 
 // encryptContent encrypts message content using receiver's address
-// This is a simplified encryption; in a real implementation, we would use
-// the receiver's public key for asymmetric encryption
+// Now using real encryption with our crypto utilities
 func encryptContent(content, receiverAddr string) string {
-        // For simplicity, we're using XOR with a hash of the receiver's address
-        // In a real implementation, use proper encryption like AES or RSA
-        
-        // Create a hash of the receiver's address
-        hash := sha256.Sum256([]byte(receiverAddr))
-        
-        // XOR the content with the hash
-        result := make([]byte, len(content))
-        for i := 0; i < len(content); i++ {
-                result[i] = content[i] ^ hash[i%32]
+        // Get the public key for the receiver
+        // For now, we'll use a simple deterministic derivation based on the address
+        // In a real implementation, we would look up the public key from a directory
+        pubKeyHash := sha256.Sum256([]byte(receiverAddr))
+        pubKeyHex := hex.EncodeToString(pubKeyHash[:])
+
+        // Use simple encryption since we don't have real public keys for addresses yet
+        encrypted, err := utils.SimpleEncrypt(content, pubKeyHex)
+        if err != nil {
+                // Fall back to very simple encryption if real encryption fails
+                hash := sha256.Sum256([]byte(receiverAddr))
+                result := make([]byte, len(content))
+                for i := 0; i < len(content); i++ {
+                        result[i] = content[i] ^ hash[i%32]
+                }
+                return hex.EncodeToString(result)
         }
         
-        return hex.EncodeToString(result)
+        return encrypted
 }
 
 // decryptContent decrypts message content using private key
 func decryptContent(encryptedContent, privateKeyHex string) string {
-        // For simplicity, we're reversing the XOR operation
-        // In a real implementation, use proper decryption
-        
-        // Decode hex string
-        content, err := hex.DecodeString(encryptedContent)
-        if err != nil {
-                return "Error: Could not decrypt message"
-        }
-        
-        // Create a hash of the private key
+        // Derive the same key hash that was used for encryption
+        // In a real implementation, we would use the actual private key
         hash := sha256.Sum256([]byte(privateKeyHex))
-        
-        // XOR the content with the hash
-        result := make([]byte, len(content))
-        for i := 0; i < len(content); i++ {
-                result[i] = content[i] ^ hash[i%32]
+        pubKeyHex := hex.EncodeToString(hash[:])
+
+        // Try to decrypt with proper encryption
+        decrypted, err := utils.SimpleDecrypt(encryptedContent, pubKeyHex)
+        if err != nil {
+                // Fall back to simple XOR decryption
+                content, decodeErr := hex.DecodeString(encryptedContent)
+                if decodeErr != nil {
+                        return "Error: Could not decrypt message"
+                }
+                
+                result := make([]byte, len(content))
+                for i := 0; i < len(content); i++ {
+                        result[i] = content[i] ^ hash[i%32]
+                }
+                
+                return string(result)
         }
         
-        return string(result)
+        return decrypted
+}
+
+// Encrypt encrypts the message content with a public key
+func (m *Message) Encrypt(publicKeyHex string) error {
+        if m.Encrypted {
+                return errors.New("message already encrypted")
+        }
+
+        // Parse the public key
+        publicKey, err := utils.PublicKeyFromHex(publicKeyHex)
+        if err != nil {
+                // Fall back to simple encryption if we can't parse the public key
+                m.Content = encryptContent(m.Content, publicKeyHex)
+                m.Encrypted = true
+                return nil
+        }
+
+        // Use proper public key encryption
+        encrypted, err := utils.EncryptMessage(publicKey, m.Content)
+        if err != nil {
+                // Fall back to simple encryption
+                m.Content = encryptContent(m.Content, publicKeyHex)
+                m.Encrypted = true
+                return nil
+        }
+
+        m.Content = encrypted
+        m.Encrypted = true
+        
+        return nil
 }

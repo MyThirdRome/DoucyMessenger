@@ -8,7 +8,7 @@ import (
         "errors"
         "time"
 
-        "github.com/doucya/messaging"
+        "github.com/doucya/interfaces"
         "github.com/doucya/utils"
 )
 
@@ -16,11 +16,13 @@ import (
 type TransactionType string
 
 const (
-        TransactionTypeCoin        TransactionType = "COIN"
-        TransactionTypeMessage     TransactionType = "MESSAGE"
-        TransactionTypeGenesis     TransactionType = "GENESIS"
-        TransactionTypeValidatorIn TransactionType = "VALIDATOR_IN"
+        TransactionTypeCoin         TransactionType = "COIN"
+        TransactionTypeMessage      TransactionType = "MESSAGE"
+        TransactionTypeMessageReward TransactionType = "MESSAGE_REWARD"
+        TransactionTypeGenesis      TransactionType = "GENESIS"
+        TransactionTypeValidatorIn  TransactionType = "VALIDATOR_IN"
         TransactionTypeValidatorOut TransactionType = "VALIDATOR_OUT"
+        TransactionTypeValidatorReward TransactionType = "VALIDATOR_REWARD"
 )
 
 // Transaction represents a transaction in the blockchain
@@ -31,9 +33,10 @@ type Transaction struct {
         Receiver  string          `json:"receiver"`
         Amount    float64         `json:"amount"`
         Type      TransactionType `json:"type"`
-        Message   *messaging.Message `json:"message,omitempty"`
+        MessageData *interfaces.MessageMetadata `json:"message_data,omitempty"`
         IsPenalty bool            `json:"is_penalty,omitempty"`
         Signature string          `json:"signature"`
+        Data      map[string]interface{} `json:"data,omitempty"`
 }
 
 // NewTransaction creates a new transaction
@@ -44,34 +47,61 @@ func NewTransaction(sender, receiver string, amount float64, txType TransactionT
                 Receiver:  receiver,
                 Amount:    amount,
                 Type:      txType,
+                Data:      make(map[string]interface{}),
         }
         
         // Generate transaction ID based on its contents
-        tx.ID = tx.generateID()
+        tx.ID = tx.GenerateID()
         
         return tx
 }
 
 // NewMessageTransaction creates a new message transaction
-func NewMessageTransaction(sender, receiver string, message *messaging.Message, isPenalty bool) *Transaction {
+func NewMessageTransaction(sender, receiver string, message interfaces.MessageData, isPenalty bool) *Transaction {
+        // Create a light metadata object from the message 
+        metadata := interfaces.NewMessageMetadata(
+                message.GetID(),
+                message.GetSender(),
+                message.GetReceiver(),
+                message.GetTimestamp(),
+        )
+
         tx := &Transaction{
                 Timestamp: time.Now(),
                 Sender:    sender,
                 Receiver:  receiver,
                 Amount:    0, // No direct amount for message transactions
                 Type:      TransactionTypeMessage,
-                Message:   message,
+                MessageData: metadata,
                 IsPenalty: isPenalty,
+                Data:      make(map[string]interface{}),
         }
         
         // Generate transaction ID based on its contents
-        tx.ID = tx.generateID()
+        tx.ID = tx.GenerateID()
         
         return tx
 }
 
-// generateID generates a unique ID for the transaction
-func (tx *Transaction) generateID() string {
+// NewRewardTransaction creates a new reward transaction
+func NewRewardTransaction(sender, receiver string, amount float64, messageID string) *Transaction {
+        tx := &Transaction{
+                Timestamp: time.Now(),
+                Sender:    sender,
+                Receiver:  receiver,
+                Amount:    amount,
+                Type:      TransactionTypeMessageReward,
+                Data:      map[string]interface{}{"messageID": messageID},
+        }
+        
+        // Generate transaction ID based on its contents
+        tx.ID = tx.GenerateID()
+        
+        return tx
+}
+
+// GenerateID generates a unique ID for the transaction
+func (tx *Transaction) GenerateID() string {
         // Create a hash of transaction details
         txData := struct {
                 Timestamp time.Time
@@ -81,6 +111,7 @@ func (tx *Transaction) generateID() string {
                 Type      TransactionType
                 MessageID string
                 IsPenalty bool
+                Data      map[string]interface{}
         }{
                 Timestamp: tx.Timestamp,
                 Sender:    tx.Sender,
@@ -88,15 +119,16 @@ func (tx *Transaction) generateID() string {
                 Amount:    tx.Amount,
                 Type:      tx.Type,
                 IsPenalty: tx.IsPenalty,
+                Data:      tx.Data,
         }
         
-        if tx.Message != nil {
-                txData.MessageID = tx.Message.ID
+        if tx.MessageData != nil {
+                txData.MessageID = tx.MessageData.GetID()
         }
         
         data, err := json.Marshal(txData)
         if err != nil {
-                return ""
+                return utils.GenerateRandomID() // Fallback to random ID in case of error
         }
         
         hash := sha256.Sum256(data)
@@ -127,13 +159,29 @@ func (tx *Transaction) Verify() bool {
         }
         
         // Transactions without a sender (system transactions) don't need verification
-        if tx.Sender == "" {
+        if tx.Sender == "" || tx.Sender == "SYSTEM" {
                 return true
         }
         
         // In a real implementation, we would verify the signature using the sender's public key
         // For simplicity, we'll just check if a signature exists
         return tx.Signature != ""
+}
+
+// SetData sets additional data for the transaction
+func (tx *Transaction) SetData(key string, value interface{}) {
+        if tx.Data == nil {
+                tx.Data = make(map[string]interface{})
+        }
+        tx.Data[key] = value
+}
+
+// GetData gets additional data from the transaction
+func (tx *Transaction) GetData(key string) interface{} {
+        if tx.Data == nil {
+                return nil
+        }
+        return tx.Data[key]
 }
 
 // GetID returns the transaction ID
@@ -171,9 +219,9 @@ func (tx *Transaction) GetType() TransactionType {
         return tx.Type
 }
 
-// GetMessage returns the transaction message if it exists
-func (tx *Transaction) GetMessage() *messaging.Message {
-        return tx.Message
+// GetMessageData returns the transaction message metadata if it exists
+func (tx *Transaction) GetMessageData() *interfaces.MessageMetadata {
+        return tx.MessageData
 }
 
 // MarshalJSON customizes the JSON marshaling for Transaction

@@ -14,3 +14,41 @@
 12:31:23.300914 version@stat F·[1] S·901B[901B] Sc·[0.25]
 12:31:23.312097 db@janitor F·3 G·0
 12:31:23.312213 db@open done T·39.602208ms
+=============== May 14, 2025 (UTC) ===============
+12:34:23.255807 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+12:34:23.256019 version@stat F·[1] S·901B[901B] Sc·[0.25]
+12:34:23.256042 db@open opening
+12:34:23.256089 journal@recovery F·1
+12:34:23.256831 journal@recovery recovering @3
+12:34:23.259231 memdb@flush created L0@5 N·5 S·853B "bal..cyA,v13":"wal..cyA,v9"
+12:34:23.259991 version@stat F·[2] S·1KiB[1KiB] Sc·[0.50]
+12:34:23.270190 db@janitor F·4 G·0
+12:34:23.270237 db@open done T·14.171679ms
+=============== May 14, 2025 (UTC) ===============
+12:36:04.103727 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+12:36:04.104228 version@stat F·[2] S·1KiB[1KiB] Sc·[0.50]
+12:36:04.104253 db@open opening
+12:36:04.104308 journal@recovery F·1
+12:36:04.105054 journal@recovery recovering @6
+12:36:04.137822 memdb@flush created L0@8 N·5 S·848B "bal..cyA,v19":"wal..cyA,v15"
+12:36:04.138408 version@stat F·[3] S·2KiB[2KiB] Sc·[0.75]
+12:36:04.156038 db@janitor F·5 G·0
+12:36:04.156911 db@open done T·52.628837ms
+=============== May 14, 2025 (UTC) ===============
+12:41:39.554946 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+12:41:39.555931 version@stat F·[3] S·2KiB[2KiB] Sc·[0.75]
+12:41:39.555955 db@open opening
+12:41:39.556019 journal@recovery F·1
+12:41:39.556710 journal@recovery recovering @9
+12:41:39.561293 memdb@flush created L0@11 N·5 S·866B "bal..cyA,v25":"wal..cyA,v21"
+12:41:39.561554 version@stat F·[4] S·3KiB[3KiB] Sc·[1.00]
+12:41:39.569771 db@janitor F·6 G·0
+12:41:39.569874 db@open done T·13.890619ms
+12:41:39.569932 table@compaction L0·4 -> L1·0 S·3KiB Q·26
+12:41:39.590732 table@build created L1@14 N·18 S·2KiB "bal..cyA,v13":"wal..cyA,v15"
+12:41:39.590771 version@stat F·[0 1] S·2KiB[0B 2KiB] Sc·[0.00 0.00]
+12:41:39.596499 table@compaction committed F-3 S-1KiB Ke·0 D·4 T·26.507779ms
+12:41:39.596582 table@remove removed @11
+12:41:39.596638 table@remove removed @8
+12:41:39.596719 table@remove removed @5
+12:41:39.596767 table@remove removed @2

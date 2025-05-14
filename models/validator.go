@@ -5,23 +5,50 @@ import (
         "time"
 )
 
+// ValidatorStatus represents the status of a validator
+type ValidatorStatus string
+
+const (
+        ValidatorStatusActive     ValidatorStatus = "ACTIVE"
+        ValidatorStatusInactive   ValidatorStatus = "INACTIVE"
+        ValidatorStatusPenalized  ValidatorStatus = "PENALIZED"
+        ValidatorStatusExited     ValidatorStatus = "EXITED"
+)
+
+// RewardHistory represents a validator reward entry
+type RewardHistory struct {
+        Amount    float64   `json:"amount"`
+        Timestamp time.Time `json:"timestamp"`
+        Type      string    `json:"type"` // "MONTHLY", "MESSAGE", etc.
+}
+
 // Validator represents a validator in the PoS system
 type Validator struct {
-        Address       string    `json:"address"`
-        Deposit       float64   `json:"deposit"`
-        StartTime     time.Time `json:"start_time"`
-        LastRewardTime time.Time `json:"last_reward_time"`
-        IsActive      bool      `json:"is_active"`
+        Address         string           `json:"address"`
+        Deposit         float64          `json:"deposit"`
+        StartTime       time.Time        `json:"start_time"`
+        LastRewardTime  time.Time        `json:"last_reward_time"`
+        Status          ValidatorStatus  `json:"status"`
+        RewardHistories []RewardHistory  `json:"reward_histories"`
+        MessageCount    int              `json:"message_count"`
+        TotalEarnings   float64          `json:"total_earnings"`
+        YearlyAPY       float64          `json:"yearly_apy"`
+        MinimumStake    float64          `json:"minimum_stake"`
 }
 
 // NewValidator creates a new validator
 func NewValidator(address string, deposit float64, startTime time.Time) *Validator {
         return &Validator{
-                Address:       address,
-                Deposit:       deposit,
-                StartTime:     startTime,
-                LastRewardTime: startTime,
-                IsActive:      true,
+                Address:         address,
+                Deposit:         deposit,
+                StartTime:       startTime,
+                LastRewardTime:  startTime,
+                Status:          ValidatorStatusActive,
+                RewardHistories: []RewardHistory{},
+                MessageCount:    0,
+                TotalEarnings:   0,
+                YearlyAPY:       0.17, // 17% APY
+                MinimumStake:    50.0, // 50 DOU minimum
         }
 }
 
@@ -36,17 +63,100 @@ func (v *Validator) DecreaseDeposit(amount float64) {
         if v.Deposit < 0 {
                 v.Deposit = 0
         }
+        
+        // Check if validator is still eligible after withdrawal
+        if v.Deposit < v.MinimumStake {
+                v.Status = ValidatorStatusInactive
+        }
+}
+
+// UpdateLastRewardTime updates the validator's last reward time
+func (v *Validator) UpdateLastRewardTime(rewardTime time.Time) {
+        v.LastRewardTime = rewardTime
+}
+
+// AddRewardHistory adds a new reward to the validator's history
+func (v *Validator) AddRewardHistory(amount float64, rewardType string) {
+        reward := RewardHistory{
+                Amount:    amount,
+                Timestamp: time.Now(),
+                Type:      rewardType,
+        }
+        
+        v.RewardHistories = append(v.RewardHistories, reward)
+        v.TotalEarnings += amount
+        v.UpdateLastRewardTime(reward.Timestamp)
+}
+
+// IncrementMessageCount increments the number of messages processed by this validator
+func (v *Validator) IncrementMessageCount() {
+        v.MessageCount++
 }
 
 // GetMonthlyReward calculates the monthly reward based on the APY
-func (v *Validator) GetMonthlyReward(apy float64) float64 {
-        monthlyRate := apy / 12
+func (v *Validator) GetMonthlyReward() float64 {
+        monthlyRate := v.YearlyAPY / 12
         return v.Deposit * monthlyRate
 }
 
-// IsEligible checks if the validator is eligible to validate based on the minimum deposit
-func (v *Validator) IsEligible(minDeposit float64) bool {
-        return v.Deposit >= minDeposit && v.IsActive
+// GetDailyReward calculates the daily reward based on the APY
+func (v *Validator) GetDailyReward() float64 {
+        dailyRate := v.YearlyAPY / 365
+        return v.Deposit * dailyRate
+}
+
+// IsEligible checks if the validator is eligible to validate
+func (v *Validator) IsEligible() bool {
+        return v.Deposit >= v.MinimumStake && v.Status == ValidatorStatusActive
+}
+
+// GetAnnualizedReturn calculates the annualized return rate
+func (v *Validator) GetAnnualizedReturn() float64 {
+        if v.TotalEarnings == 0 {
+                return 0
+        }
+        
+        daysActive := time.Since(v.StartTime).Hours() / 24
+        if daysActive < 1 {
+                return 0
+        }
+        
+        // Calculate annualized return
+        dailyReturn := v.TotalEarnings / daysActive
+        annualReturn := dailyReturn * 365
+        
+        return annualReturn / v.Deposit
+}
+
+// GetMessageRewardMultiplier returns the multiplier for message rewards
+func (v *Validator) GetMessageRewardMultiplier() float64 {
+        // Validators get 150% of user rewards
+        return 1.5
+}
+
+// PenalizeValidator applies a penalty to the validator
+func (v *Validator) PenalizeValidator(penaltyPercentage float64) float64 {
+        penaltyAmount := v.Deposit * penaltyPercentage
+        v.DecreaseDeposit(penaltyAmount)
+        v.Status = ValidatorStatusPenalized
+        
+        return penaltyAmount
+}
+
+// RestoreValidator restores a penalized validator to active status
+func (v *Validator) RestoreValidator() {
+        if v.Status == ValidatorStatusPenalized && v.Deposit >= v.MinimumStake {
+                v.Status = ValidatorStatusActive
+        }
+}
+
+// ExitValidator makes a validator exit the network
+func (v *Validator) ExitValidator() float64 {
+        withdrawalAmount := v.Deposit
+        v.Deposit = 0
+        v.Status = ValidatorStatusExited
+        
+        return withdrawalAmount
 }
 
 // GetAddress returns the validator's address
@@ -69,11 +179,16 @@ func (v *Validator) GetLastRewardTime() time.Time {
         return v.LastRewardTime
 }
 
+// GetStatus returns the validator's status
+func (v *Validator) GetStatus() ValidatorStatus {
+        return v.Status
+}
+
 // MarshalJSON customizes the JSON marshaling for Validator
 func (v *Validator) MarshalJSON() ([]byte, error) {
         type ValidatorAlias Validator
         return json.Marshal(&struct {
-                StartTime     string `json:"start_time"`
+                StartTime      string `json:"start_time"`
                 LastRewardTime string `json:"last_reward_time"`
                 *ValidatorAlias
         }{
