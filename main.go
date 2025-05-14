@@ -90,8 +90,7 @@ func main() {
         
         // Initialize P2P server
         p2pPortStr := fmt.Sprintf(":%d", *p2pPort)
-        bootstrapNodes := []string{} // Empty list for now
-        p2pServer := p2p.NewServer(p2pPortStr, blockchain, bootstrapNodes)
+        p2pServer := p2p.NewServer(p2pPortStr, blockchain, cfg.BootstrapNodes)
 
         // Check if we need to initialize a new node
         if *initNode {
