@@ -2,6 +2,7 @@ package cmd
 
 import (
         "bufio"
+        "encoding/json"
         "fmt"
         "os"
         "strconv"
@@ -202,6 +203,8 @@ func (cli *CLI) processCommand(cmd string) {
                         return
                 }
                 cli.addPeer(args[1])
+        case "sync":
+                cli.syncWithPeers()
         case "reply":
                 if len(args) < 4 {
                         fmt.Println("Usage: reply FROM TO MESSAGE_ID MESSAGE")
@@ -283,6 +286,7 @@ func (cli *CLI) printHelp() {
         fmt.Println("\n=== Network Commands ===")
         fmt.Println("  peers                               - Show connected peers")
         fmt.Println("  addpeer ADDRESS                     - Add a new peer by address")
+        fmt.Println("  sync                                - Manually trigger synchronization with all peers")
 }
 
 // CreateNewWallet creates a new wallet and returns its address
@@ -876,6 +880,47 @@ func (cli *CLI) showStakeRewards(address string) {
                         fmt.Println()
                 }
         }
+}
+
+// syncWithPeers manually triggers synchronization with peers
+func (cli *CLI) syncWithPeers() {
+        peers := cli.p2pServer.GetPeers()
+        
+        if len(peers) == 0 {
+                fmt.Println("No peers connected. Use 'addpeer ADDRESS' to connect to peers first.")
+                return
+        }
+        
+        fmt.Printf("Synchronizing with %d peers...\n", len(peers))
+        
+        // Request validator information from all peers
+        for _, peer := range peers {
+                fmt.Printf("Requesting validators from %s...\n", peer.GetAddr())
+                
+                // Create a get validators message
+                message := &p2p.Message{
+                        Type: p2p.MessageTypeGetValidators,
+                        Data: json.RawMessage("{}"),
+                }
+                
+                // Marshal message
+                messageBytes, err := json.Marshal(message)
+                if err != nil {
+                        fmt.Printf("Failed to marshal validator request: %v\n", err)
+                        continue
+                }
+                
+                // Send message to peer
+                err = peer.SendMessage(messageBytes)
+                if err != nil {
+                        fmt.Printf("Failed to send validator request to peer %s: %v\n", peer.GetAddr(), err)
+                        continue
+                }
+                
+                fmt.Printf("Successfully requested validators from peer: %s\n", peer.GetAddr())
+        }
+        
+        fmt.Println("Synchronization requests sent to all peers. Please wait for responses...")
 }
 
 // increaseStake increases the stake for a validator

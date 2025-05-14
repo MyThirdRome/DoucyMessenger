@@ -548,12 +548,30 @@ func (bc *Blockchain) GetHeight() (int64, error) {
 func (bc *Blockchain) GetValidators() ([]*models.Validator, error) {
         bc.mu.RLock()
         defer bc.mu.RUnlock()
-
+        
         validators := make([]*models.Validator, 0, len(bc.validators))
         for _, v := range bc.validators {
                 validators = append(validators, v)
         }
+        
         return validators, nil
+}
+
+// SyncValidator syncs a validator from another node
+func (bc *Blockchain) SyncValidator(validator *models.Validator) error {
+        bc.mu.Lock()
+        defer bc.mu.Unlock()
+        
+        // Check if we already have this validator
+        if _, exists := bc.validators[validator.Address]; exists {
+                return nil // Already have this validator
+        }
+        
+        // Add validator to our list
+        bc.validators[validator.Address] = validator
+        
+        // Save to storage
+        return bc.storage.SaveValidator(validator)
 }
 
 // GetValidatorMinDeposit returns the minimum validator deposit

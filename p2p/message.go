@@ -9,15 +9,18 @@ import (
 type MessageType string
 
 const (
-        MessageTypeNodeInfo        MessageType = "NODE_INFO"
-        MessageTypePeerList        MessageType = "PEER_LIST"
-        MessageTypeBlock           MessageType = "BLOCK"
-        MessageTypeTransaction     MessageType = "TRANSACTION"
-        MessageTypeGetBlocks       MessageType = "GET_BLOCKS"
-        MessageTypeGetPeers        MessageType = "GET_PEERS"
-        MessageTypeMessageReward   MessageType = "MESSAGE_REWARD"
-        MessageTypeValidatorReward MessageType = "VALIDATOR_REWARD"
-        MessageTypeSystemMessage   MessageType = "SYSTEM_MESSAGE"
+        MessageTypeNodeInfo           MessageType = "NODE_INFO"
+        MessageTypePeerList           MessageType = "PEER_LIST"
+        MessageTypeBlock              MessageType = "BLOCK"
+        MessageTypeTransaction        MessageType = "TRANSACTION"
+        MessageTypeGetBlocks          MessageType = "GET_BLOCKS"
+        MessageTypeGetPeers           MessageType = "GET_PEERS"
+        MessageTypeMessageReward      MessageType = "MESSAGE_REWARD"
+        MessageTypeValidatorReward    MessageType = "VALIDATOR_REWARD"
+        MessageTypeSystemMessage      MessageType = "SYSTEM_MESSAGE"
+        MessageTypeValidator          MessageType = "VALIDATOR"
+        MessageTypeGetValidators      MessageType = "GET_VALIDATORS"
+        MessageTypeValidatorList      MessageType = "VALIDATOR_LIST"
 )
 
 // Message represents a P2P message

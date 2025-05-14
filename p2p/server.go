@@ -9,6 +9,7 @@ import (
         "time"
 
         "github.com/doucya/core"
+        "github.com/doucya/models"
         "github.com/doucya/utils"
 )
 
@@ -266,8 +267,98 @@ func (s *Server) HandleMessage(peer *Peer, message *Message) {
                 s.handleValidatorReward(peer, message)
         case MessageTypeSystemMessage:
                 s.handleSystemMessage(peer, message)
+        case MessageTypeValidator:
+                s.handleValidator(peer, message)
+        case MessageTypeGetValidators:
+                s.handleGetValidators(peer)
+        case MessageTypeValidatorList:
+                s.handleValidatorList(peer, message)
         default:
-                fmt.Printf("Unknown message type: %s\n", message.Type)
+                utils.Debug("Unknown message type: %s", message.Type)
+        }
+}
+
+// handleValidator handles a validator message
+func (s *Server) handleValidator(peer *Peer, message *Message) {
+        var validator core.Validator
+        if err := json.Unmarshal(message.Data, &validator); err != nil {
+                utils.Error("Error unmarshaling validator: %v", err)
+                return
+        }
+
+        // Convert to models.Validator
+        modelValidator := &models.Validator{
+                Address:         validator.Address,
+                Deposit:         validator.Deposit,
+                StartTime:       validator.StartTime,
+                LastRewardTime:  validator.LastRewardTime,
+                Status:          models.ValidatorStatusActive,
+                MessageCount:    validator.MessageCount,
+                TotalEarnings:   validator.TotalRewards,
+                RewardHistories: []models.RewardHistory{},
+                YearlyAPY:       0.17, // 17% APY
+                MinimumStake:    50.0, // 50 DOU minimum
+        }
+
+        // Add the validator to the blockchain
+        err := s.blockchain.SyncValidator(modelValidator)
+        if err != nil {
+                utils.Error("Failed to sync validator: %v", err)
+                return
+        }
+
+        // Broadcast to other peers
+        s.BroadcastMessage(MessageTypeValidator, validator)
+}
+
+// handleGetValidators handles a request for validators
+func (s *Server) handleGetValidators(peer *Peer) {
+        validators, err := s.blockchain.GetValidators()
+        if err != nil {
+                utils.Error("Error getting validators: %v", err)
+                return
+        }
+        
+        // Send each validator separately
+        for _, validator := range validators {
+            // Send each validator as a message
+            err := s.BroadcastMessage(MessageTypeValidator, validator)
+            if err != nil {
+                utils.Error("Error broadcasting validator: %v", err)
+            }
+        }
+}
+
+// handleValidatorList handles a list of validators
+func (s *Server) handleValidatorList(peer *Peer, message *Message) {
+        var validators []*models.Validator
+        if err := json.Unmarshal(message.Data, &validators); err != nil {
+                utils.Error("Error unmarshaling validator list: %v", err)
+                return
+        }
+
+        // Compare with our validators and request any we don't have
+        ourValidators, err := s.blockchain.GetValidators()
+        if err != nil {
+                utils.Error("Error getting validators: %v", err)
+                return
+        }
+        
+        ourValidatorMap := make(map[string]bool)
+        
+        for _, v := range ourValidators {
+                ourValidatorMap[v.Address] = true
+        }
+        
+        for _, v := range validators {
+                if _, exists := ourValidatorMap[v.Address]; !exists {
+                        // Request detailed validator info
+                        err := s.BroadcastMessage(MessageTypeGetValidators, nil)
+                        if err != nil {
+                                utils.Error("Error requesting validators: %v", err)
+                        }
+                        break // Just request all validators once
+                }
         }
 }
 

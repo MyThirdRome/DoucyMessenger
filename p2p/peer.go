@@ -105,7 +105,7 @@ func (p *Peer) GetBlockHeight() int64 {
         return p.blockHeight
 }
 
-// SendMessage sends a message to the peer
+// SendMessage sends a raw message to the peer
 func (p *Peer) SendMessage(data []byte) error {
         // Add newline as message delimiter
         data = append(data, '\n')
@@ -123,6 +123,18 @@ func (p *Peer) SendMessage(data []byte) error {
         }
         
         return nil
+}
+
+// SendMessageObject sends a Message object to the peer
+func (p *Peer) SendMessageObject(message *Message) error {
+        // Convert message to JSON
+        data, err := json.Marshal(message)
+        if err != nil {
+                return fmt.Errorf("failed to marshal message: %v", err)
+        }
+        
+        // Send message
+        return p.SendMessage(data)
 }
 
 // HandleMessages handles incoming messages from the peer
