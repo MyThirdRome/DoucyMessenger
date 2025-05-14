@@ -94,7 +94,7 @@ func main() {
         go cli.Start()
 
         // Print node status
-        printNodeStatus(store)
+        printNodeStatus(store, p2pServer)
 
         // Wait for interrupt signal to gracefully shutdown
         c := make(chan os.Signal, 1)
@@ -122,15 +122,27 @@ func initializeNode(store *storage.LevelDBStorage) error {
                 lastBlock = genesis
         }
 
-        // Create a wallet for this node
+        // Create a wallet for this node but don't display sensitive info in logs
         w := wallet.NewWallet()
         if err := store.SaveWallet(w); err != nil {
                 return fmt.Errorf("failed to save wallet: %v", err)
         }
 
-        fmt.Printf("Created new wallet with address: %s\n", w.GetAddress())
-        fmt.Printf("Private key: %s\n", w.GetPrivateKeyString())
-        fmt.Println("IMPORTANT: Save this private key securely. It cannot be recovered if lost.")
+        // Only display address, not the private key
+        fmt.Printf("Node wallet initialized with address: %s\n", w.GetAddress())
+        fmt.Println("Use 'importwallet YOUR_PRIVATE_KEY' later if you need to recover this wallet on another node.")
+        
+        // Save private key to a secure file
+        privateKeyFile := "node_private_key.txt"
+        err = os.WriteFile(privateKeyFile, []byte(w.GetPrivateKeyString()), 0600)
+        if err != nil {
+                fmt.Printf("WARNING: Failed to save private key to file: %v\n", err)
+                fmt.Printf("IMPORTANT: Save this private key securely, it will not be displayed again: %s\n", 
+                        w.GetPrivateKeyString())
+        } else {
+                fmt.Printf("Your private key has been saved to %s\n", privateKeyFile)
+                fmt.Println("IMPORTANT: Keep this file secure and make a backup. It cannot be recovered if lost.")
+        }
 
         // Check if we're one of the first 10 nodes to get genesis allocation
         nodeCount, err := store.GetNodeCount()
@@ -171,7 +183,7 @@ func initializeNode(store *storage.LevelDBStorage) error {
 }
 
 // printNodeStatus prints the status of the node
-func printNodeStatus(store *storage.LevelDBStorage) {
+func printNodeStatus(store *storage.LevelDBStorage, p2pServer *p2p.Server) {
         lastBlock, err := store.GetLastBlock()
         if err != nil {
                 fmt.Printf("Error getting last block: %v\n", err)
@@ -187,31 +199,20 @@ func printNodeStatus(store *storage.LevelDBStorage) {
         fmt.Printf("  Current Height: %d\n", lastBlock.Height)
         fmt.Printf("  Latest Block Hash: %s\n", lastBlock.Hash)
 
-        // Get wallets
-        wallets, err := store.GetWallets()
+        // Calculate total circulating supply
+        totalSupply, err := calculateTotalSupply(store)
         if err != nil {
-                fmt.Printf("Error getting wallets: %v\n", err)
+                fmt.Printf("Error calculating total supply: %v\n", err)
         } else {
-                fmt.Printf("  Wallets: %d\n", len(wallets))
-                for _, w := range wallets {
-                        balance, err := store.GetBalance(w.GetAddress())
-                        if err != nil {
-                                fmt.Printf("    %s: Error getting balance: %v\n", w.GetAddress(), err)
-                        } else {
-                                fmt.Printf("    %s: %.10f DOU\n", w.GetAddress(), balance)
-                        }
-                }
+                fmt.Printf("  Circulating Supply: %.2f DOU\n", totalSupply)
         }
 
-        // Get validators
+        // Get validators count only (not detailed info)
         validators, err := store.GetValidators()
         if err != nil {
                 fmt.Printf("Error getting validators: %v\n", err)
         } else {
-                fmt.Printf("  Validators: %d\n", len(validators))
-                for _, v := range validators {
-                        fmt.Printf("    %s: %.10f DOU\n", v.Address, v.Deposit)
-                }
+                fmt.Printf("  Active Validators: %d\n", len(validators))
         }
 
         // Get node count
@@ -221,4 +222,29 @@ func printNodeStatus(store *storage.LevelDBStorage) {
         } else {
                 fmt.Printf("  Total Nodes: %d\n", nodeCount)
         }
+        
+        // Get connected peers count if p2pServer is available
+        fmt.Printf("  Connected Peers: %d\n", len(p2pServer.GetPeers()))
+        
+        fmt.Println("\nUse 'createwallet' to create a new wallet or 'importwallet' to import an existing one.")
+        fmt.Println("Type 'help' for available commands.")
+}
+
+// calculateTotalSupply calculates the total amount of DOU in circulation
+func calculateTotalSupply(store *storage.LevelDBStorage) (float64, error) {
+        wallets, err := store.GetWallets()
+        if err != nil {
+                return 0, err
+        }
+        
+        var totalSupply float64
+        for _, w := range wallets {
+                balance, err := store.GetBalance(w.GetAddress())
+                if err != nil {
+                        continue
+                }
+                totalSupply += balance
+        }
+        
+        return totalSupply, nil
 }

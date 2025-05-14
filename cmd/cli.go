@@ -56,7 +56,7 @@ func (cli *CLI) Start() {
 // InitializeNode initializes a new node
 func (cli *CLI) InitializeNode() error {
         // Create a wallet for this node if it doesn't exist
-        address, err := cli.createNewAddress()
+        address, err := cli.createNewWallet()
         if err != nil {
                 return fmt.Errorf("failed to create node wallet: %v", err)
         }
@@ -77,13 +77,24 @@ func (cli *CLI) processCommand(cmd string) {
                 cli.printHelp()
         case "exit", "quit":
                 cli.running = false
-        case "createaddress":
-                address, err := cli.createNewAddress()
+        case "createwallet", "createaddress":
+                address, err := cli.createNewWallet()
                 if err != nil {
-                        fmt.Printf("Error creating address: %v\n", err)
+                        fmt.Printf("Error creating wallet: %v\n", err)
                         return
                 }
-                fmt.Printf("New address created: %s\n", address)
+                fmt.Printf("New wallet created with address: %s\n", address)
+        case "importwallet":
+                if len(args) < 2 {
+                        fmt.Println("Usage: importwallet PRIVATE_KEY")
+                        return
+                }
+                address, err := cli.importWallet(args[1])
+                if err != nil {
+                        fmt.Printf("Error importing wallet: %v\n", err)
+                        return
+                }
+                fmt.Printf("Wallet imported successfully with address: %s\n", address)
         case "listaddresses":
                 cli.listAddresses()
         case "getbalance":
@@ -222,7 +233,8 @@ func (cli *CLI) printHelp() {
         fmt.Println("  status                              - Show blockchain status")
         
         fmt.Println("\n=== Wallet Commands ===")
-        fmt.Println("  createaddress                       - Create a new wallet address")
+        fmt.Println("  createwallet                        - Create a new wallet")
+        fmt.Println("  importwallet PRIVATE_KEY            - Import a wallet from a private key")
         fmt.Println("  listaddresses                       - List all wallet addresses")
         fmt.Println("  getbalance ADDRESS                  - Get balance for an address")
         fmt.Println("  send FROM TO AMOUNT                 - Send coins from one address to another")
@@ -252,7 +264,7 @@ func (cli *CLI) printHelp() {
         fmt.Println("  addpeer ADDRESS                     - Add a new peer by address")
 }
 
-func (cli *CLI) createNewAddress() (string, error) {
+func (cli *CLI) createNewWallet() (string, error) {
         w := wallet.NewWallet()
         address := w.GetAddress()
         
@@ -264,6 +276,36 @@ func (cli *CLI) createNewAddress() (string, error) {
         
         fmt.Printf("Your private key: %s\n", w.GetPrivateKeyString())
         fmt.Println("IMPORTANT: Save this private key securely. It cannot be recovered if lost.")
+        
+        return address, nil
+}
+
+// importWallet imports a wallet from a private key
+func (cli *CLI) importWallet(privateKey string) (string, error) {
+        // Load wallet from private key
+        w, err := wallet.LoadWalletFromPrivateKey(privateKey)
+        if err != nil {
+                return "", fmt.Errorf("failed to load wallet: %v", err)
+        }
+        
+        // Check if wallet with this address already exists
+        addresses, err := cli.blockchain.GetAddresses()
+        if err != nil {
+                return "", fmt.Errorf("failed to check addresses: %v", err)
+        }
+        
+        address := w.GetAddress()
+        for _, addr := range addresses {
+                if addr == address {
+                        return address, fmt.Errorf("wallet with address %s already exists", address)
+                }
+        }
+        
+        // Store wallet
+        err = cli.blockchain.AddWallet(w)
+        if err != nil {
+                return "", fmt.Errorf("failed to store wallet: %v", err)
+        }
         
         return address, nil
 }
