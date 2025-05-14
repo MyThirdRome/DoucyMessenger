@@ -21,10 +21,10 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "go mod tidy && go run main.go -init"
+args = "go mod tidy && go run main.go"
 
 [deployment]
-run = ["sh", "-c", "go mod tidy && go run main.go -init"]
+run = ["sh", "-c", "go mod tidy && go run main.go"]
 
 [[ports]]
 localPort = 8333

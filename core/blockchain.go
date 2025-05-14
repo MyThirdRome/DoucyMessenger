@@ -561,6 +561,57 @@ func (bc *Blockchain) GetValidatorMinDeposit() float64 {
         return bc.validatorMinDeposit
 }
 
+// GetLastBlock returns the last block in the blockchain
+func (bc *Blockchain) GetLastBlock() (*models.Block, error) {
+        return bc.storage.GetLastBlock()
+}
+
+// GetNodeCount returns the current node count in the blockchain
+func (bc *Blockchain) GetNodeCount() (int, error) {
+        return bc.storage.GetNodeCount()
+}
+
+// GenesisAllocation allocates genesis funds to a new wallet
+func (bc *Blockchain) GenesisAllocation(address string, amount float64) error {
+        bc.mu.Lock()
+        defer bc.mu.Unlock()
+        
+        // Check for existing balance to prevent double allocation
+        existingBalance, err := bc.storage.GetBalance(address)
+        if err == nil && existingBalance > 0 {
+                return fmt.Errorf("address %s already has funds (%f DOU)", address, existingBalance)
+        }
+        
+        // Get the last block
+        lastBlock, err := bc.storage.GetLastBlock()
+        if err != nil {
+                return fmt.Errorf("failed to get last block: %v", err)
+        }
+        
+        // Create genesis transaction
+        tx := models.NewTransaction("", address, amount, models.TransactionTypeGenesis)
+        
+        // Add to a new block
+        block := models.NewBlock([]*models.Transaction{tx}, lastBlock)
+        
+        // Save block
+        if err := bc.storage.SaveBlock(block); err != nil {
+                return fmt.Errorf("failed to save block with genesis allocation: %v", err)
+        }
+        
+        // Update balance
+        if err := bc.storage.UpdateBalance(address, amount); err != nil {
+                return fmt.Errorf("failed to update balance: %v", err)
+        }
+        
+        // Increment node count
+        if err := bc.storage.IncrementNodeCount(); err != nil {
+                return fmt.Errorf("failed to increment node count: %v", err)
+        }
+        
+        return nil
+}
+
 // Helper methods
 
 // isWhitelisted checks if the sender has whitelisted the receiver

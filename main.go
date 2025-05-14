@@ -31,6 +31,7 @@ func main() {
         initNode := flag.Bool("init", false, "Initialize a new node")
         dbPath := flag.String("db", "./doucya_data", "Path to database directory")
         cliOnly := flag.Bool("cli", false, "Start in CLI-only mode")
+        testWallet := flag.Bool("testwallet", false, "Test wallet creation with genesis allocation")
         p2pPort := flag.Int("port", 8333, "P2P network port")
         flag.Parse()
 
@@ -77,6 +78,38 @@ func main() {
                 if *cliOnly {
                         return
                 }
+        }
+        
+        // Test wallet creation with genesis allocation
+        if *testWallet {
+                // Create CLI
+                cli := cmd.NewCLI(blockchain, p2pServer, store, cfg)
+                
+                // Create a new wallet
+                fmt.Println("\n=== Testing Wallet Creation ===")
+                address, err := cli.CreateNewWallet()
+                if err != nil {
+                        log.Fatalf("Failed to create wallet: %v", err)
+                }
+                
+                // Check the wallet balance
+                balance, err := store.GetBalance(address)
+                if err != nil {
+                        log.Fatalf("Failed to get wallet balance: %v", err)
+                }
+                
+                // Get node count
+                nodeCount, err := store.GetNodeCount()
+                if err != nil {
+                        log.Fatalf("Failed to get node count: %v", err)
+                }
+                
+                fmt.Printf("\nWallet created with address: %s\n", address)
+                fmt.Printf("Wallet balance: %.2f DOU\n", balance)
+                fmt.Printf("Current node count: %d\n", nodeCount)
+                fmt.Println("=== Test Complete ===\n")
+                
+                return
         }
 
         // If we're in CLI-only mode, start the CLI and return

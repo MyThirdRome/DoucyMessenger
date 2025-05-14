@@ -10,6 +10,7 @@ import (
         "github.com/doucya/config"
         "github.com/doucya/core"
         "github.com/doucya/messaging"
+        "github.com/doucya/models"
         "github.com/doucya/p2p"
         "github.com/doucya/storage"
         "github.com/doucya/wallet"
@@ -56,7 +57,7 @@ func (cli *CLI) Start() {
 // InitializeNode initializes a new node
 func (cli *CLI) InitializeNode() error {
         // Create a wallet for this node if it doesn't exist
-        address, err := cli.createNewWallet()
+        address, err := cli.CreateNewWallet()
         if err != nil {
                 return fmt.Errorf("failed to create node wallet: %v", err)
         }
@@ -78,7 +79,7 @@ func (cli *CLI) processCommand(cmd string) {
         case "exit", "quit":
                 cli.running = false
         case "createwallet", "createaddress":
-                address, err := cli.createNewWallet()
+                address, err := cli.CreateNewWallet()
                 if err != nil {
                         fmt.Printf("Error creating wallet: %v\n", err)
                         return
@@ -89,7 +90,7 @@ func (cli *CLI) processCommand(cmd string) {
                         fmt.Println("Usage: importwallet PRIVATE_KEY")
                         return
                 }
-                address, err := cli.importWallet(args[1])
+                address, err := cli.ImportWallet(args[1])
                 if err != nil {
                         fmt.Printf("Error importing wallet: %v\n", err)
                         return
@@ -264,7 +265,8 @@ func (cli *CLI) printHelp() {
         fmt.Println("  addpeer ADDRESS                     - Add a new peer by address")
 }
 
-func (cli *CLI) createNewWallet() (string, error) {
+// CreateNewWallet creates a new wallet and returns its address
+func (cli *CLI) CreateNewWallet() (string, error) {
         w := wallet.NewWallet()
         address := w.GetAddress()
         
@@ -274,14 +276,69 @@ func (cli *CLI) createNewWallet() (string, error) {
                 return "", err
         }
         
+        // Print the private key
         fmt.Printf("Your private key: %s\n", w.GetPrivateKeyString())
         fmt.Println("IMPORTANT: Save this private key securely. It cannot be recovered if lost.")
+        
+        // Check for node count directly from storage
+        nodeCount, err := cli.storage.GetNodeCount()
+        if err != nil {
+                fmt.Printf("Warning: Failed to check node count: %v\n", err)
+                return address, nil
+        }
+        
+        if nodeCount < 10 {
+                // Check for existing balance
+                existingBalance, err := cli.storage.GetBalance(address)
+                if err != nil {
+                        existingBalance = 0
+                }
+                
+                if existingBalance == 0 {
+                        // We're one of the first 10 wallets, give it 15,000 DOU
+                        fmt.Println("---------------------------------------------")
+                        fmt.Println("🎉 Congratulations! This wallet is one of the first 10 on the DoucyA network.")
+                        fmt.Println("📊 Current node count: ", nodeCount)
+                        fmt.Println("💰 You receive 15,000 DOU genesis allocation.")
+                        fmt.Println("---------------------------------------------")
+                        
+                        // Get last block
+                        lastBlock, err := cli.storage.GetLastBlock()
+                        if err != nil {
+                                fmt.Printf("Warning: Failed to get last block: %v\n", err)
+                                return address, nil
+                        }
+                        
+                        // Create genesis transaction for this wallet
+                        tx := models.NewTransaction("", address, 15000.0, models.TransactionTypeGenesis)
+                        
+                        // Create a new block with this transaction
+                        block := models.NewBlock([]*models.Transaction{tx}, lastBlock)
+                        
+                        // Save the block to storage
+                        if err := cli.storage.SaveBlock(block); err != nil {
+                                fmt.Printf("Warning: Failed to save block with genesis allocation: %v\n", err)
+                                return address, nil
+                        }
+                        
+                        // Update wallet balance
+                        if err := cli.storage.UpdateBalance(address, 15000.0); err != nil {
+                                fmt.Printf("Warning: Failed to update balance: %v\n", err)
+                                return address, nil
+                        }
+                        
+                        // Increment node count since we added a new funded wallet
+                        if err := cli.storage.IncrementNodeCount(); err != nil {
+                                fmt.Printf("Warning: Failed to increment node count: %v\n", err)
+                        }
+                }
+        }
         
         return address, nil
 }
 
-// importWallet imports a wallet from a private key
-func (cli *CLI) importWallet(privateKey string) (string, error) {
+// ImportWallet imports a wallet from a private key
+func (cli *CLI) ImportWallet(privateKey string) (string, error) {
         // Load wallet from private key
         w, err := wallet.LoadWalletFromPrivateKey(privateKey)
         if err != nil {
@@ -305,6 +362,60 @@ func (cli *CLI) importWallet(privateKey string) (string, error) {
         err = cli.blockchain.AddWallet(w)
         if err != nil {
                 return "", fmt.Errorf("failed to store wallet: %v", err)
+        }
+        
+        // Check for node count directly from storage
+        nodeCount, err := cli.storage.GetNodeCount()
+        if err != nil {
+                fmt.Printf("Warning: Failed to check node count: %v\n", err)
+                return address, nil
+        }
+        
+        if nodeCount < 10 {
+                // Check for existing balance
+                existingBalance, err := cli.storage.GetBalance(address)
+                if err != nil {
+                        existingBalance = 0
+                }
+                
+                if existingBalance == 0 {
+                        // We're one of the first 10 wallets, give it 15,000 DOU
+                        fmt.Println("---------------------------------------------")
+                        fmt.Println("🎉 Congratulations! This wallet is one of the first 10 on the DoucyA network.")
+                        fmt.Println("📊 Current node count: ", nodeCount)
+                        fmt.Println("💰 You receive 15,000 DOU genesis allocation.")
+                        fmt.Println("---------------------------------------------")
+                        
+                        // Get last block
+                        lastBlock, err := cli.storage.GetLastBlock()
+                        if err != nil {
+                                fmt.Printf("Warning: Failed to get last block: %v\n", err)
+                                return address, nil
+                        }
+                        
+                        // Create genesis transaction for this wallet
+                        tx := models.NewTransaction("", address, 15000.0, models.TransactionTypeGenesis)
+                        
+                        // Create a new block with this transaction
+                        block := models.NewBlock([]*models.Transaction{tx}, lastBlock)
+                        
+                        // Save the block to storage
+                        if err := cli.storage.SaveBlock(block); err != nil {
+                                fmt.Printf("Warning: Failed to save block with genesis allocation: %v\n", err)
+                                return address, nil
+                        }
+                        
+                        // Update wallet balance
+                        if err := cli.storage.UpdateBalance(address, 15000.0); err != nil {
+                                fmt.Printf("Warning: Failed to update balance: %v\n", err)
+                                return address, nil
+                        }
+                        
+                        // Increment node count since we added a new funded wallet
+                        if err := cli.storage.IncrementNodeCount(); err != nil {
+                                fmt.Printf("Warning: Failed to increment node count: %v\n", err)
+                        }
+                }
         }
         
         return address, nil
