@@ -21,12 +21,32 @@ const (
         MessageTypeValidator          MessageType = "VALIDATOR"
         MessageTypeGetValidators      MessageType = "GET_VALIDATORS"
         MessageTypeValidatorList      MessageType = "VALIDATOR_LIST"
+        MessageTypeGetBalance         MessageType = "GET_BALANCE"     // Request balance for an address
+        MessageTypeBalance            MessageType = "BALANCE"         // Response with balance for an address
+        MessageTypeSyncBalances       MessageType = "SYNC_BALANCES"   // Push balances to other nodes
 )
 
 // Message represents a P2P message
 type Message struct {
         Type MessageType  `json:"type"`
         Data json.RawMessage `json:"data"`
+}
+
+// BalanceRequest represents a request for an address balance
+type BalanceRequest struct {
+        Address string `json:"address"`
+}
+
+// BalanceResponse represents the response to a balance request
+type BalanceResponse struct {
+        Address string  `json:"address"`
+        Balance float64 `json:"balance"`
+}
+
+// BalancesSync represents a collection of address balances for synchronization
+type BalancesSync struct {
+        Balances map[string]float64 `json:"balances"` // map of address to balance
+        Height   int64              `json:"height"`   // blockchain height at sync time
 }
 
 // NodeInfo represents node information shared during handshake

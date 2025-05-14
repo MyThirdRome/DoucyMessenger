@@ -268,6 +268,36 @@ func (s *LevelDBStorage) UpdateBalance(address string, balance float64) error {
         return nil
 }
 
+// GetAllBalances retrieves all balances from the database
+func (s *LevelDBStorage) GetAllBalances() (map[string]float64, error) {
+        s.mu.RLock()
+        defer s.mu.RUnlock()
+
+        balances := make(map[string]float64)
+        iter := s.db.NewIterator(util.BytesPrefix([]byte(BalancePrefix)), nil)
+        defer iter.Release()
+
+        for iter.Next() {
+                // Extract address from the key (remove prefix)
+                key := string(iter.Key())
+                address := key[len(BalancePrefix):]
+                
+                // Unmarshal balance
+                var balance float64
+                if err := json.Unmarshal(iter.Value(), &balance); err != nil {
+                        return nil, fmt.Errorf("failed to unmarshal balance for %s: %v", address, err)
+                }
+                
+                balances[address] = balance
+        }
+
+        if err := iter.Error(); err != nil {
+                return nil, fmt.Errorf("error iterating balances: %v", err)
+        }
+
+        return balances, nil
+}
+
 // SaveValidator saves a validator to the database
 func (s *LevelDBStorage) SaveValidator(validator interface{}) error {
         v, ok := validator.(*models.Validator)

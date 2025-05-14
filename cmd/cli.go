@@ -363,6 +363,15 @@ func (cli *CLI) CreateNewWallet() (string, error) {
                 }
         }
         
+        // Synchronize balance with connected peers
+        fmt.Println("Synchronizing wallet balance with connected peers...")
+        err = cli.p2pServer.SyncBalancesWithPeers()
+        if err != nil {
+                fmt.Printf("Warning: Failed to synchronize wallet balance: %v\n", err)
+                fmt.Println("You may need to run 'sync' manually to ensure your balance is visible to all nodes.")
+        } else {
+                fmt.Println("Balance successfully synchronized with connected peers.")
+        }
         return address, nil
 }
 
@@ -447,6 +456,15 @@ func (cli *CLI) ImportWallet(privateKey string) (string, error) {
                 }
         }
         
+        // Synchronize balance with connected peers
+        fmt.Println("Synchronizing wallet balance with connected peers...")
+        err = cli.p2pServer.SyncBalancesWithPeers()
+        if err != nil {
+                fmt.Printf("Warning: Failed to synchronize wallet balance: %v\n", err)
+                fmt.Println("You may need to run 'sync' manually to ensure your balance is visible to all nodes.")
+        } else {
+                fmt.Println("Balance successfully synchronized with connected peers.")
+        }
         return address, nil
 }
 
@@ -1055,6 +1073,15 @@ func (cli *CLI) syncWithPeers() {
                         fmt.Printf("Failed to send get peers message to peer %s: %v\n", peer.GetAddr(), err)
                         continue
                 }
+        }
+        
+        // Now sync balances with all peers
+        fmt.Println("Synchronizing balances with all peers...")
+        err := cli.p2pServer.SyncBalancesWithPeers()
+        if err != nil {
+                fmt.Printf("Failed to sync balances: %v\n", err)
+        } else {
+                fmt.Println("Balance synchronization completed successfully.")
         }
         
         fmt.Println("Synchronization requests sent to all peers. Please wait for responses...")

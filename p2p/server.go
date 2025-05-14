@@ -399,6 +399,12 @@ func (s *Server) HandleMessage(peer *Peer, message *Message) {
                 s.handleGetValidators(peer)
         case MessageTypeValidatorList:
                 s.handleValidatorList(peer, message)
+        case MessageTypeGetBalance:
+                s.handleGetBalance(peer, message)
+        case MessageTypeBalance:
+                s.handleBalance(peer, message)
+        case MessageTypeSyncBalances:
+                s.handleSyncBalances(peer, message)
         default:
                 utils.Debug("Unknown message type: %s", message.Type)
         }
@@ -1285,4 +1291,185 @@ func (s *Server) handleSystemMessage(peer *Peer, message *Message) {
         } else {
                 fmt.Printf("System message without type: %v\n", systemData)
         }
+}
+
+// handleGetBalance handles a request for address balance
+func (s *Server) handleGetBalance(peer *Peer, message *Message) {
+        var request BalanceRequest
+        
+        if err := json.Unmarshal(message.Data, &request); err != nil {
+                utils.Error("Failed to unmarshal balance request: %v", err)
+                return
+        }
+
+        utils.Info("Received balance request for address %s from peer %s", 
+                request.Address, peer.GetAddr())
+
+        // Get balance from blockchain
+        balance, err := s.blockchain.GetBalance(request.Address)
+        if err != nil {
+                utils.Error("Failed to get balance for address %s: %v", request.Address, err)
+                return
+        }
+
+        // Send balance response back to the peer
+        response := BalanceResponse{
+                Address: request.Address,
+                Balance: balance,
+        }
+
+        // Create and send the message
+        responseMsg, err := s.createMessageBytes(MessageTypeBalance, response)
+        if err != nil {
+                utils.Error("Failed to create balance response message: %v", err)
+                return
+        }
+
+        if err := peer.SendMessage(responseMsg); err != nil {
+                utils.Error("Failed to send balance response to peer %s: %v", peer.GetAddr(), err)
+                return
+        }
+
+        utils.Info("Sent balance response for address %s to peer %s: %.2f", 
+                request.Address, peer.GetAddr(), balance)
+}
+
+// handleBalance handles a response with an address balance
+func (s *Server) handleBalance(peer *Peer, message *Message) {
+        var response BalanceResponse
+        
+        if err := json.Unmarshal(message.Data, &response); err != nil {
+                utils.Error("Failed to unmarshal balance response: %v", err)
+                return
+        }
+
+        utils.Info("Received balance for address %s from peer %s: %.2f", 
+                response.Address, peer.GetAddr(), response.Balance)
+
+        // Get our local balance
+        localBalance, err := s.blockchain.GetBalance(response.Address)
+        if err != nil {
+                utils.Warning("No local balance for address %s, will update from peer", response.Address)
+                localBalance = 0
+        }
+
+        // If peer's balance is different, update our local balance
+        if localBalance != response.Balance {
+                utils.Info("Updating local balance for address %s from %.2f to %.2f", 
+                        response.Address, localBalance, response.Balance)
+                
+                // Update the balance in our blockchain
+                if err := s.blockchain.UpdateBalance(response.Address, response.Balance); err != nil {
+                        utils.Error("Failed to update local balance: %v", err)
+                        return
+                }
+                
+                utils.Info("Balance successfully updated for address %s", response.Address)
+        }
+}
+
+// handleSyncBalances handles a batch balance synchronization message
+func (s *Server) handleSyncBalances(peer *Peer, message *Message) {
+        var syncData BalancesSync
+        
+        if err := json.Unmarshal(message.Data, &syncData); err != nil {
+                utils.Error("Failed to unmarshal balances sync: %v", err)
+                return
+        }
+
+        // Get our current blockchain height
+        currentHeight, err := s.blockchain.GetHeight()
+        if err != nil {
+                utils.Error("Failed to get blockchain height: %v", err)
+                return
+        }
+        
+        // Only accept balance updates from peers with equal or higher blockchain height
+        if syncData.Height < currentHeight {
+                utils.Warning("Ignoring balance sync from peer %s with lower height %d vs our %d", 
+                        peer.GetAddr(), syncData.Height, currentHeight)
+                return
+        }
+
+        utils.Info("Received balance sync from peer %s with %d balances", 
+                peer.GetAddr(), len(syncData.Balances))
+
+        // Update balances in our blockchain
+        for address, balance := range syncData.Balances {
+                localBalance, err := s.blockchain.GetBalance(address)
+                if err != nil || localBalance != balance {
+                        utils.Info("Updating balance for address %s from %.2f to %.2f", 
+                                address, localBalance, balance)
+                        
+                        if err := s.blockchain.UpdateBalance(address, balance); err != nil {
+                                utils.Error("Failed to update balance for address %s: %v", address, err)
+                                continue
+                        }
+                }
+        }
+
+        utils.Info("Balance synchronization from peer %s completed", peer.GetAddr())
+}
+
+// SyncBalancesWithPeers sends our balances to all connected peers
+func (s *Server) SyncBalancesWithPeers() error {
+        // Get our current blockchain height
+        currentHeight, err := s.blockchain.GetHeight()
+        if err != nil {
+                return fmt.Errorf("failed to get blockchain height: %v", err)
+        }
+        
+        // Get all balances from our blockchain
+        balances, err := s.blockchain.GetAllBalances()
+        if err != nil {
+                return fmt.Errorf("failed to get all balances: %v", err)
+        }
+        
+        if len(balances) == 0 {
+                utils.Info("No balances to synchronize")
+                return nil
+        }
+        
+        // Create balance sync message
+        syncData := BalancesSync{
+                Balances: balances,
+                Height:   currentHeight,
+        }
+        
+        // Create and serialize the message
+        syncMsg, err := s.createMessageBytes(MessageTypeSyncBalances, syncData)
+        if err != nil {
+                return fmt.Errorf("failed to create balance sync message: %v", err)
+        }
+        
+        // Broadcast to all peers
+        s.peersMutex.RLock()
+        peerCount := len(s.peers)
+        s.peersMutex.RUnlock()
+        
+        if peerCount == 0 {
+                utils.Info("No peers to synchronize balances with")
+                return nil
+        }
+        
+        utils.Info("Broadcasting balances for %d addresses to %d peers", len(balances), peerCount)
+        
+        // Broadcast to all peers
+        success := false
+        s.peersMutex.RLock()
+        for _, peer := range s.peers {
+                if err := peer.SendMessage(syncMsg); err != nil {
+                        utils.Error("Failed to send balance sync to peer %s: %v", peer.GetAddr(), err)
+                } else {
+                        success = true
+                }
+        }
+        s.peersMutex.RUnlock()
+        
+        if !success {
+                return fmt.Errorf("failed to send balance sync to any peers")
+        }
+        
+        utils.Info("Balance synchronization completed successfully")
+        return nil
 }

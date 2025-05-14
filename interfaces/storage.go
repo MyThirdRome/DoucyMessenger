@@ -77,6 +77,7 @@ type Storage interface {
         
         GetBalance(address string) (float64, error)
         UpdateBalance(address string, amount float64) error
+        GetAllBalances() (map[string]float64, error)
         
         SavePendingRewards(rewards interface{}) error
         GetPendingRewards() (interface{}, error)

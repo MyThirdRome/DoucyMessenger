@@ -146,6 +146,29 @@ func (bc *Blockchain) GetBalance(address string) (float64, error) {
         return balance, nil
 }
 
+// GetAllBalances returns a map of all addresses and their balances
+func (bc *Blockchain) GetAllBalances() (map[string]float64, error) {
+        bc.mu.RLock()
+        defer bc.mu.RUnlock()
+        
+        // Get all balances from storage
+        return bc.storage.GetAllBalances()
+}
+
+// UpdateBalance updates the balance for an address
+func (bc *Blockchain) UpdateBalance(address string, balance float64) error {
+        bc.mu.Lock()
+        defer bc.mu.Unlock()
+        
+        // Validate address
+        if !wallet.ValidateAddress(address) {
+                return errors.New("invalid address format")
+        }
+        
+        // Update the balance in storage
+        return bc.storage.UpdateBalance(address, balance)
+}
+
 // ProcessTransaction processes a transaction received from the network
 func (bc *Blockchain) ProcessTransaction(tx *models.Transaction) error {
         bc.mu.Lock()
