@@ -23,7 +23,7 @@ const (
 // Message represents a P2P message
 type Message struct {
         Type MessageType  `json:"type"`
-        Data interface{} `json:"data"`
+        Data json.RawMessage `json:"data"`
 }
 
 // NodeInfo represents node information shared during handshake

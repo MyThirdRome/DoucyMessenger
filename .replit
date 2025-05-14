@@ -25,3 +25,7 @@ args = "go mod tidy && go run main.go -init"
 
 [deployment]
 run = ["sh", "-c", "go mod tidy && go run main.go -init"]
+
+[[ports]]
+localPort = 8333
+externalPort = 80

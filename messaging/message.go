@@ -6,7 +6,6 @@ import (
         "encoding/hex"
         "encoding/json"
         "errors"
-        "fmt"
         "time"
 
         "github.com/doucya/interfaces"
@@ -169,15 +168,29 @@ func (m *Message) Decrypt(privateKeyHex string) (string, error) {
                 return m.Content, nil
         }
 
-        // Validate private key format
-        _, err := utils.PrivateKeyFromHex(privateKeyHex)
+        // Parse the private key
+        privateKey, err := utils.PrivateKeyFromHex(privateKeyHex)
         if err != nil {
-                return "", fmt.Errorf("invalid private key: %v", err)
+                // Fall back to simple decryption if we can't parse the private key
+                decrypted := decryptContent(m.Content, privateKeyHex)
+                m.Content = decrypted
+                m.Encrypted = false
+                return decrypted, nil
         }
 
-        // In a real implementation, we would use the private key to decrypt the content
-        // Here, we're using a simple encryption for demonstration
-        decrypted := decryptContent(m.Content, privateKeyHex)
+        // Use proper private key decryption
+        decrypted, err := utils.DecryptWithPrivateKey(m.Content, privateKey)
+        if err != nil {
+                // Fall back to simple decryption
+                decrypted := decryptContent(m.Content, privateKeyHex)
+                m.Content = decrypted
+                m.Encrypted = false
+                return decrypted, nil
+        }
+
+        m.Content = decrypted
+        m.Encrypted = false
+        
         return decrypted, nil
 }
 
@@ -225,10 +238,10 @@ func encryptContent(content, receiverAddr string) string {
         // For now, we'll use a simple deterministic derivation based on the address
         // In a real implementation, we would look up the public key from a directory
         pubKeyHash := sha256.Sum256([]byte(receiverAddr))
-        pubKeyHex := hex.EncodeToString(pubKeyHash[:])
+        keyBytes := pubKeyHash[:]
 
-        // Use simple encryption since we don't have real public keys for addresses yet
-        encrypted, err := utils.SimpleEncrypt(content, pubKeyHex)
+        // Use AES encryption with derived key
+        encrypted, err := utils.AESEncryptMessage(content, keyBytes)
         if err != nil {
                 // Fall back to very simple encryption if real encryption fails
                 hash := sha256.Sum256([]byte(receiverAddr))
@@ -247,10 +260,10 @@ func decryptContent(encryptedContent, privateKeyHex string) string {
         // Derive the same key hash that was used for encryption
         // In a real implementation, we would use the actual private key
         hash := sha256.Sum256([]byte(privateKeyHex))
-        pubKeyHex := hex.EncodeToString(hash[:])
+        keyBytes := hash[:]
 
         // Try to decrypt with proper encryption
-        decrypted, err := utils.SimpleDecrypt(encryptedContent, pubKeyHex)
+        decrypted, err := utils.AESDecryptMessage(encryptedContent, keyBytes)
         if err != nil {
                 // Fall back to simple XOR decryption
                 content, decodeErr := hex.DecodeString(encryptedContent)
@@ -285,7 +298,7 @@ func (m *Message) Encrypt(publicKeyHex string) error {
         }
 
         // Use proper public key encryption
-        encrypted, err := utils.EncryptMessage(publicKey, m.Content)
+        encrypted, err := utils.EncryptWithPublicKey(m.Content, publicKey)
         if err != nil {
                 // Fall back to simple encryption
                 m.Content = encryptContent(m.Content, publicKeyHex)
@@ -298,3 +311,5 @@ func (m *Message) Encrypt(publicKeyHex string) error {
         
         return nil
 }
+
+

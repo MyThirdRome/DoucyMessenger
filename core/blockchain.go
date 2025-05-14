@@ -455,7 +455,9 @@ func (bc *Blockchain) CreateGroup(creator, name string, isPublic bool) (string, 
         }
 
         // Create group
-        group := messaging.NewGroup(creator, name, isPublic)
+        description := ""  // Default empty description
+        tags := []string{} // Default empty tags
+        group := messaging.NewGroup(creator, name, description, isPublic, tags)
         
         // Save group
         if err := bc.storage.SaveGroup(group); err != nil {
@@ -482,8 +484,8 @@ func (bc *Blockchain) JoinGroup(address, groupID string) error {
         }
 
         // Check if group is public or address is the owner
-        // Just use the group directly since it's already the correct type
-        if !group.IsPublicGroup() && group.GetCreator() != address {
+        // Access the Group fields directly
+        if !group.IsPublic && group.Creator != address {
                 return errors.New("cannot join private group")
         }
 

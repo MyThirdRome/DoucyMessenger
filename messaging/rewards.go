@@ -11,44 +11,143 @@ import (
         "time"
 )
 
-// RewardTracker tracks message rewards
+// Constants for messaging reward system
+const (
+        // Default reward amounts for messaging
+        SenderRewardAmount   = 0.75 // DOU amount for sender
+        ReceiverRewardAmount = 0.25 // DOU amount for receiver
+
+        // Rate limits for spam protection
+        MaxMessagesPerHour      = 200 // Maximum messages one address can send per hour
+        MaxMessagesToSameTarget = 30  // Maximum messages to same address per hour
+)
+
+// RewardTracker tracks message rewards and rate limits
 type RewardTracker struct {
         mu                sync.RWMutex
         pendingRewards    map[string]map[string]float64 // sender -> receiver -> amount
-        processedMessages map[string]bool              // message ID -> processed
+        processedMessages map[string]bool               // message ID -> processed
         senderReward      float64
         receiverReward    float64
-        maxRewardsPerDay  int                          // limit total rewards per day
-        dailyRewardCount  map[string]int               // address -> count of rewards received today
-        lastResetDay      time.Time                    // tracks when daily rewards were last reset
+        maxMessagesPerHour int                         // limit total messages per hour (rate limiting)
+        maxMessagesToSameTarget int                    // limit messages to same address per hour
+        hourlyMessageCount map[string]int              // address -> count of messages sent in current hour
+        targetMessageCount map[string]map[string]int   // sender -> receiver -> count in current hour
+        lastResetHour      time.Time                   // tracks when hourly limits were last reset
+        whitelists         map[string]map[string]bool  // address -> whitelisted addresses -> true
 }
 
 // NewRewardTracker creates a new reward tracker
-func NewRewardTracker(senderReward, receiverReward float64) *RewardTracker {
+func NewRewardTracker() *RewardTracker {
         return &RewardTracker{
-                pendingRewards:    make(map[string]map[string]float64),
-                processedMessages: make(map[string]bool),
-                senderReward:      senderReward,
-                receiverReward:    receiverReward,
-                maxRewardsPerDay:  100, // Maximum rewards one address can receive per day
-                dailyRewardCount:  make(map[string]int),
-                lastResetDay:      time.Now(),
+                pendingRewards:       make(map[string]map[string]float64),
+                processedMessages:    make(map[string]bool),
+                senderReward:         SenderRewardAmount,
+                receiverReward:       ReceiverRewardAmount,
+                maxMessagesPerHour:   MaxMessagesPerHour,
+                maxMessagesToSameTarget: MaxMessagesToSameTarget,
+                hourlyMessageCount:   make(map[string]int),
+                targetMessageCount:   make(map[string]map[string]int),
+                lastResetHour:        time.Now(),
+                whitelists:           make(map[string]map[string]bool),
         }
 }
 
-// resetDailyCountersIfNeeded resets daily counters if it's a new day
-func (rt *RewardTracker) resetDailyCountersIfNeeded() {
-        today := time.Now()
-        if today.YearDay() != rt.lastResetDay.YearDay() || today.Year() != rt.lastResetDay.Year() {
-                rt.dailyRewardCount = make(map[string]int)
-                rt.lastResetDay = today
+// resetHourlyCountersIfNeeded resets hourly counters if it's a new hour
+func (rt *RewardTracker) resetHourlyCountersIfNeeded() {
+        now := time.Now()
+        elapsed := now.Sub(rt.lastResetHour)
+        
+        // Reset if more than an hour has passed
+        if elapsed.Hours() >= 1 {
+                rt.hourlyMessageCount = make(map[string]int)
+                rt.targetMessageCount = make(map[string]map[string]int)
+                rt.lastResetHour = now
         }
 }
 
-// canReceiveReward checks if an address has not exceeded daily reward limit
-func (rt *RewardTracker) canReceiveReward(address string) bool {
-        rt.resetDailyCountersIfNeeded()
-        return rt.dailyRewardCount[address] < rt.maxRewardsPerDay
+// AddToWhitelist adds an address to another address's whitelist
+func (rt *RewardTracker) AddToWhitelist(owner, target string) {
+        rt.mu.Lock()
+        defer rt.mu.Unlock()
+        
+        if _, exists := rt.whitelists[owner]; !exists {
+                rt.whitelists[owner] = make(map[string]bool)
+        }
+        rt.whitelists[owner][target] = true
+}
+
+// RemoveFromWhitelist removes an address from another address's whitelist
+func (rt *RewardTracker) RemoveFromWhitelist(owner, target string) {
+        rt.mu.Lock()
+        defer rt.mu.Unlock()
+        
+        if whitelist, exists := rt.whitelists[owner]; exists {
+                delete(whitelist, target)
+        }
+}
+
+// IsWhitelisted checks if an address is in another address's whitelist
+func (rt *RewardTracker) IsWhitelisted(owner, target string) bool {
+        rt.mu.RLock()
+        defer rt.mu.RUnlock()
+        
+        whitelist, exists := rt.whitelists[owner]
+        if !exists {
+                return false
+        }
+        return whitelist[target]
+}
+
+// IsMutuallyWhitelisted checks if both addresses have whitelisted each other
+func (rt *RewardTracker) IsMutuallyWhitelisted(addr1, addr2 string) bool {
+        return rt.IsWhitelisted(addr1, addr2) && rt.IsWhitelisted(addr2, addr1)
+}
+
+// CanSendMessage checks if an address can send more messages based on rate limits
+func (rt *RewardTracker) CanSendMessage(sender, receiver string) (bool, string) {
+        rt.mu.Lock()
+        defer rt.mu.Unlock()
+        
+        rt.resetHourlyCountersIfNeeded()
+        
+        // Check if mutually whitelisted
+        if !rt.IsMutuallyWhitelisted(sender, receiver) {
+                return false, "addresses must mutually whitelist each other"
+        }
+        
+        // Check hourly limit
+        if rt.hourlyMessageCount[sender] >= rt.maxMessagesPerHour {
+                return false, fmt.Sprintf("exceeded maximum of %d messages per hour", rt.maxMessagesPerHour)
+        }
+        
+        // Check per-target limit
+        if _, exists := rt.targetMessageCount[sender]; !exists {
+                rt.targetMessageCount[sender] = make(map[string]int)
+        }
+        
+        if rt.targetMessageCount[sender][receiver] >= rt.maxMessagesToSameTarget {
+                return false, fmt.Sprintf("exceeded maximum of %d messages to same address per hour", rt.maxMessagesToSameTarget)
+        }
+        
+        return true, ""
+}
+
+// RecordMessageSent updates the message count for rate limiting
+func (rt *RewardTracker) RecordMessageSent(sender, receiver string) {
+        rt.mu.Lock()
+        defer rt.mu.Unlock()
+        
+        rt.resetHourlyCountersIfNeeded()
+        
+        // Update hourly counter
+        rt.hourlyMessageCount[sender]++
+        
+        // Update per-target counter
+        if _, exists := rt.targetMessageCount[sender]; !exists {
+                rt.targetMessageCount[sender] = make(map[string]int)
+        }
+        rt.targetMessageCount[sender][receiver]++
 }
 
 // AddMessageReward adds a pending reward for a message
@@ -68,17 +167,11 @@ func (rt *RewardTracker) AddMessageReward(message *Message, isPenalty bool) {
                 // Sender pays a fee instead of getting a reward
                 // This is handled elsewhere in the blockchain
         } else {
-                // Check if sender can receive more rewards today
-                if rt.canReceiveReward(sender) {
-                        // Add sender reward (pending until receiver responds)
-                        if _, exists := rt.pendingRewards[sender]; !exists {
-                                rt.pendingRewards[sender] = make(map[string]float64)
-                        }
-                        rt.pendingRewards[sender][receiver] = rt.senderReward
-                        
-                        // Increment sender's daily reward count
-                        rt.dailyRewardCount[sender]++
+                // Add sender reward (pending until receiver responds)
+                if _, exists := rt.pendingRewards[sender]; !exists {
+                        rt.pendingRewards[sender] = make(map[string]float64)
                 }
+                rt.pendingRewards[sender][receiver] = rt.senderReward
         }
 
         // Mark as processed
@@ -103,24 +196,20 @@ func (rt *RewardTracker) GetPendingRewards() map[string]map[string]float64 {
 }
 
 // ProcessReward processes a reward when a response is received
-func (rt *RewardTracker) ProcessReward(sender, receiver string) (float64, bool) {
+// Returns sender reward amount, receiver reward amount, and success status
+func (rt *RewardTracker) ProcessReward(sender, receiver string) (float64, float64, bool) {
         rt.mu.Lock()
         defer rt.mu.Unlock()
 
         // Check if reward exists
         rewards, exists := rt.pendingRewards[sender]
         if !exists {
-                return 0, false
+                return 0, 0, false
         }
 
-        amount, exists := rewards[receiver]
+        senderAmount, exists := rewards[receiver]
         if !exists {
-                return 0, false
-        }
-
-        // Check if receiver can receive more rewards today
-        if !rt.canReceiveReward(receiver) {
-                return 0, false
+                return 0, 0, false
         }
 
         // Remove reward
@@ -129,23 +218,92 @@ func (rt *RewardTracker) ProcessReward(sender, receiver string) (float64, bool) 
                 delete(rt.pendingRewards, sender)
         }
 
-        // Increment receiver's daily reward count
-        rt.dailyRewardCount[receiver]++
-
-        return amount, true
+        // Return both sender and receiver reward amounts
+        return senderAmount, rt.receiverReward, true
 }
 
 // RewardTransaction represents a transaction for a message reward
 type RewardTransaction struct {
-        ID          string    `json:"id"`
-        Timestamp   time.Time `json:"timestamp"`
-        Sender      string    `json:"sender"`   // SYSTEM or validator address
-        Receiver    string    `json:"receiver"` // address receiving the reward
-        Amount      float64   `json:"amount"`
-        MessageID   string    `json:"message_id"`
-        OriginalSender string `json:"original_sender"`
-        Type        string    `json:"type"` // "SENDER_REWARD" or "RECEIVER_REWARD"
-        Signature   string    `json:"signature"`
+        ID            string    `json:"id"`
+        Timestamp     time.Time `json:"timestamp"`
+        Sender        string    `json:"sender"`    // SYSTEM or validator address
+        Receiver      string    `json:"receiver"`  // address receiving the reward
+        Amount        float64   `json:"amount"`
+        MessageID     string    `json:"message_id"`
+        OriginalSender string    `json:"original_sender"`
+        Type          string    `json:"type"`     // "SENDER_REWARD" or "RECEIVER_REWARD"
+        Signature     string    `json:"signature"`
+}
+
+// CreateRewardTransaction creates a signed reward transaction
+func CreateRewardTransaction(
+        rewardType string,
+        receiverAddr string,
+        amount float64,
+        messageID string,
+        originalSender string,
+        privateKey *ecdsa.PrivateKey,
+) (*RewardTransaction, error) {
+        // Create transaction ID (hash of data)
+        idData := fmt.Sprintf("%s-%s-%.8f-%s-%s-%d", 
+                rewardType, 
+                receiverAddr, 
+                amount, 
+                messageID, 
+                originalSender, 
+                time.Now().UnixNano())
+        hash := sha256.Sum256([]byte(idData))
+        id := hex.EncodeToString(hash[:])
+        
+        // Create transaction
+        tx := &RewardTransaction{
+                ID:             id,
+                Timestamp:      time.Now(),
+                Sender:         "SYSTEM", // System rewards come from "SYSTEM"
+                Receiver:       receiverAddr,
+                Amount:         amount,
+                MessageID:      messageID,
+                OriginalSender: originalSender,
+                Type:           rewardType,
+        }
+        
+        // Sign transaction
+        txJSON, err := json.Marshal(tx)
+        if err != nil {
+                return nil, fmt.Errorf("failed to marshal transaction: %v", err)
+        }
+        
+        txHash := sha256.Sum256(txJSON)
+        signature, err := ecdsa.SignASN1(nil, privateKey, txHash[:])
+        if err != nil {
+                return nil, fmt.Errorf("failed to sign transaction: %v", err)
+        }
+        
+        tx.Signature = hex.EncodeToString(signature)
+        return tx, nil
+}
+
+// VerifyRewardTransaction verifies a reward transaction signature
+func VerifyRewardTransaction(tx *RewardTransaction, pubKey *ecdsa.PublicKey) bool {
+        // Create a copy of the transaction without signature for verification
+        txCopy := *tx
+        signature := tx.Signature
+        txCopy.Signature = ""
+        
+        // Marshal transaction
+        txJSON, err := json.Marshal(txCopy)
+        if err != nil {
+                return false
+        }
+        
+        // Verify signature
+        txHash := sha256.Sum256(txJSON)
+        signatureBytes, err := hex.DecodeString(signature)
+        if err != nil {
+                return false
+        }
+        
+        return ecdsa.VerifyASN1(pubKey, txHash[:], signatureBytes)
 }
 
 // NewRewardTransaction creates a new reward transaction

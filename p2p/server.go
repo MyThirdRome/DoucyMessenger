@@ -220,9 +220,16 @@ func (s *Server) acceptConnections() {
 
 // createMessageBytes creates a byte slice for a message
 func (s *Server) createMessageBytes(msgType MessageType, data interface{}) ([]byte, error) {
+        // First marshal the data to JSON
+        dataBytes, err := json.Marshal(data)
+        if err != nil {
+                return nil, fmt.Errorf("failed to marshal message data: %v", err)
+        }
+
+        // Create the message with the raw JSON data
         message := &Message{
                 Type: msgType,
-                Data: data,
+                Data: json.RawMessage(dataBytes),
         }
 
         return json.Marshal(message)
@@ -316,18 +323,14 @@ func (s *Server) syncWithPeers() {
         }
 }
 
-// Helper function to convert interface{} to []byte with type assertion
-func getBytesFromInterface(data interface{}) ([]byte, error) {
-        if data == nil {
-                return nil, fmt.Errorf("data is nil")
+// We don't need this function anymore since we're using json.RawMessage
+// Keeping it for backwards compatibility with a direct passthrough
+func getBytesFromInterface(data json.RawMessage) ([]byte, error) {
+        if len(data) == 0 {
+                return nil, fmt.Errorf("data is empty")
         }
         
-        bytes, ok := data.([]byte)
-        if !ok {
-                return nil, fmt.Errorf("expected []byte, got %T", data)
-        }
-        
-        return bytes, nil
+        return data, nil
 }
 
 // Message handlers
@@ -336,13 +339,8 @@ func getBytesFromInterface(data interface{}) ([]byte, error) {
 func (s *Server) handleNodeInfo(peer *Peer, message *Message) {
         var nodeInfo NodeInfo
         
-        data, err := getBytesFromInterface(message.Data)
-        if err != nil {
-                fmt.Printf("Invalid message data: %v\n", err)
-                return
-        }
-        
-        err = json.Unmarshal(data, &nodeInfo)
+        // The Data field is already a json.RawMessage which we can unmarshal directly
+        err := json.Unmarshal(message.Data, &nodeInfo)
         if err != nil {
                 fmt.Printf("Failed to unmarshal node info: %v\n", err)
                 return
