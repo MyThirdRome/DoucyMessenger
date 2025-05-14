@@ -171,3 +171,43 @@
 13:37:22.955208 version@stat F·[2 1] S·6KiB[788B 6KiB] Sc·[0.50 0.00]
 13:37:22.983794 db@janitor F·5 G·0
 13:37:22.983837 db@open done T·137.528914ms
+=============== May 14, 2025 (UTC) ===============
+14:54:26.443056 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+14:54:26.443830 version@stat F·[2 1] S·6KiB[788B 6KiB] Sc·[0.50 0.00]
+14:54:26.443852 db@open opening
+14:54:26.443898 journal@recovery F·1
+14:54:26.444514 journal@recovery recovering @45
+14:54:26.448959 memdb@flush created L0@47 N·1 S·394B "wal..cyA,v67":"wal..cyA,v67"
+14:54:26.449284 version@stat F·[3 1] S·7KiB[1KiB 6KiB] Sc·[0.75 0.00]
+14:54:26.458633 db@janitor F·6 G·0
+14:54:26.459014 db@open done T·15.14052ms
+=============== May 14, 2025 (UTC) ===============
+14:54:39.244743 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+14:54:39.245436 version@stat F·[3 1] S·7KiB[1KiB 6KiB] Sc·[0.75 0.00]
+14:54:39.245459 db@open opening
+14:54:39.245505 journal@recovery F·1
+14:54:39.246194 journal@recovery recovering @48
+14:54:39.265148 memdb@flush created L0@50 N·1 S·381B "wal..cyA,v69":"wal..cyA,v69"
+14:54:39.265558 version@stat F·[4 1] S·7KiB[1KiB 6KiB] Sc·[1.00 0.00]
+14:54:39.273241 db@janitor F·7 G·0
+14:54:39.274020 db@open done T·28.5414ms
+14:54:39.274129 table@compaction expanding L0+L1 (F·1 S·381B)+(F·1 S·6KiB) -> (F·4 S·1KiB)+(F·1 S·6KiB)
+14:54:39.274154 table@compaction L0·4 -> L1·1 S·7KiB Q·70
+14:54:39.279903 table@build created L1@53 N·45 S·6KiB "bal..cyA,v13":"wal..cyA,v45"
+14:54:39.279936 version@stat F·[0 1] S·6KiB[0B 6KiB] Sc·[0.00 0.00]
+14:54:39.285371 table@compaction committed F-4 S-663B Ke·0 D·0 T·11.144601ms
+14:54:39.285453 table@remove removed @50
+14:54:39.285515 table@remove removed @47
+14:54:39.285589 table@remove removed @44
+14:54:39.285804 table@remove removed @41
+14:54:39.285878 table@remove removed @40
+=============== May 14, 2025 (UTC) ===============
+14:55:32.214034 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+14:55:32.214729 version@stat F·[0 1] S·6KiB[0B 6KiB] Sc·[0.00 0.00]
+14:55:32.214749 db@open opening
+14:55:32.214805 journal@recovery F·1
+14:55:32.215639 journal@recovery recovering @51
+14:55:32.219201 memdb@flush created L0@54 N·1 S·384B "wal..cyA,v71":"wal..cyA,v71"
+14:55:32.219471 version@stat F·[1 1] S·7KiB[384B 6KiB] Sc·[0.25 0.00]
+14:55:32.228085 db@janitor F·4 G·0
+14:55:32.228480 db@open done T·13.70715ms

@@ -8,6 +8,14 @@ import (
         "time"
 )
 
+// min returns the smaller of x or y.
+func min(x, y int) int {
+        if x < y {
+                return x
+        }
+        return y
+}
+
 // Peer represents a peer node in the network
 type Peer struct {
         conn        net.Conn
@@ -101,17 +109,32 @@ func (p *Peer) readMessages() {
                         continue
                 }
                 
-                // Check if it's a protocol handshake or some other non-JSON data
-                if len(data) > 0 && (data[0] == 'G' || data[0] == 'H' || data[0] == 'P') {
-                        // Likely an HTTP request or other protocol, ignore
-                        fmt.Printf("Ignoring non-protocol message from peer %s: starts with %c\n", p.addr, data[0])
-                        continue
+                // Enhanced protocol message detection
+                // Check for common non-JSON protocol messages to filter out
+                if len(data) > 0 {
+                        // Check for HTTP and other common protocols
+                        firstChar := data[0]
+                        if firstChar == 'G' || firstChar == 'H' || firstChar == 'P' ||     // HTTP methods (GET, HEAD, POST)
+                           firstChar == 'C' || firstChar == 'U' || firstChar == 'D' ||     // HTTP methods (CONNECT, UPDATE, DELETE)
+                           firstChar == 'A' || firstChar == 'S' || firstChar == 'X' {      // Other protocols
+                                fmt.Printf("Ignoring non-protocol message from peer %s: starts with %c\n", p.addr, firstChar)
+                                continue
+                        }
+
+                        // Check for other common patterns that aren't valid JSON
+                        firstTwoBytes := string(data[:min(2, len(data))])
+                        if firstTwoBytes != "{\"" && firstTwoBytes != "[{" && firstTwoBytes != "[ " {
+                                // Most likely not valid JSON
+                                fmt.Printf("Ignoring invalid JSON format from peer %s\n", p.addr)
+                                continue
+                        }
                 }
                 
-                // Parse message
+                // Parse message with better error handling
                 var message Message
                 err := json.Unmarshal(data, &message)
                 if err != nil {
+                        // Log error but don't print the data which might be large
                         fmt.Printf("Failed to parse message from peer %s (len: %d): %v\n", p.addr, len(data), err)
                         continue
                 }

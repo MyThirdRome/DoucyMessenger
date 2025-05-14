@@ -366,13 +366,7 @@ func (s *Server) handleNodeInfo(peer *Peer, message *Message) {
 func (s *Server) handlePeerList(peer *Peer, message *Message) {
         var peerList []string
         
-        data, err := getBytesFromInterface(message.Data)
-        if err != nil {
-                fmt.Printf("Invalid message data: %v\n", err)
-                return
-        }
-        
-        err = json.Unmarshal(data, &peerList)
+        err := json.Unmarshal(message.Data, &peerList)
         if err != nil {
                 fmt.Printf("Failed to unmarshal peer list: %v\n", err)
                 return
@@ -397,13 +391,7 @@ func (s *Server) handlePeerList(peer *Peer, message *Message) {
 func (s *Server) handleBlock(peer *Peer, message *Message) {
         var block core.Block
         
-        data, err := getBytesFromInterface(message.Data)
-        if err != nil {
-                fmt.Printf("Invalid message data: %v\n", err)
-                return
-        }
-        
-        err = json.Unmarshal(data, &block)
+        err := json.Unmarshal(message.Data, &block)
         if err != nil {
                 fmt.Printf("Failed to unmarshal block: %v\n", err)
                 return
@@ -423,13 +411,7 @@ func (s *Server) handleBlock(peer *Peer, message *Message) {
 func (s *Server) handleTransaction(peer *Peer, message *Message) {
         var tx core.Transaction
         
-        data, err := getBytesFromInterface(message.Data)
-        if err != nil {
-                fmt.Printf("Invalid message data: %v\n", err)
-                return
-        }
-        
-        err = json.Unmarshal(data, &tx)
+        err := json.Unmarshal(message.Data, &tx)
         if err != nil {
                 fmt.Printf("Failed to unmarshal transaction: %v\n", err)
                 return
@@ -449,13 +431,7 @@ func (s *Server) handleTransaction(peer *Peer, message *Message) {
 func (s *Server) handleGetBlocks(peer *Peer, message *Message) {
         var startHeight int64
         
-        data, err := getBytesFromInterface(message.Data)
-        if err != nil {
-                fmt.Printf("Invalid message data: %v\n", err)
-                return
-        }
-        
-        err = json.Unmarshal(data, &startHeight)
+        err := json.Unmarshal(message.Data, &startHeight)
         if err != nil {
                 fmt.Printf("Failed to unmarshal get blocks: %v\n", err)
                 return
@@ -510,20 +486,11 @@ func (s *Server) requestBlocks(peer *Peer, startHeight int64) {
 // handleMessageReward handles a message reward broadcast
 func (s *Server) handleMessageReward(peer *Peer, message *Message) {
         var rewardData map[string]interface{}
-        data, ok := message.Data.(map[string]interface{})
-        if !ok {
-                dataBytes, ok := message.Data.([]byte)
-                if !ok {
-                        fmt.Printf("Failed to parse message reward data\n")
-                        return
-                }
-                
-                if err := json.Unmarshal(dataBytes, &rewardData); err != nil {
-                        fmt.Printf("Failed to unmarshal message reward: %v\n", err)
-                        return
-                }
-        } else {
-                rewardData = data
+        
+        // Directly unmarshal the json.RawMessage
+        if err := json.Unmarshal(message.Data, &rewardData); err != nil {
+                fmt.Printf("Failed to unmarshal message reward: %v\n", err)
+                return
         }
         
         // Log the message reward
@@ -538,20 +505,11 @@ func (s *Server) handleMessageReward(peer *Peer, message *Message) {
 // handleValidatorReward handles a validator reward message
 func (s *Server) handleValidatorReward(peer *Peer, message *Message) {
         var rewardData map[string]interface{}
-        data, ok := message.Data.(map[string]interface{})
-        if !ok {
-                dataBytes, ok := message.Data.([]byte)
-                if !ok {
-                        fmt.Printf("Failed to parse validator reward data\n")
-                        return
-                }
-                
-                if err := json.Unmarshal(dataBytes, &rewardData); err != nil {
-                        fmt.Printf("Failed to unmarshal validator reward: %v\n", err)
-                        return
-                }
-        } else {
-                rewardData = data
+        
+        // Directly unmarshal the json.RawMessage
+        if err := json.Unmarshal(message.Data, &rewardData); err != nil {
+                fmt.Printf("Failed to unmarshal validator reward: %v\n", err)
+                return
         }
         
         // Log the validator reward
@@ -566,20 +524,11 @@ func (s *Server) handleValidatorReward(peer *Peer, message *Message) {
 // handleSystemMessage handles system-wide messages
 func (s *Server) handleSystemMessage(peer *Peer, message *Message) {
         var systemData map[string]interface{}
-        data, ok := message.Data.(map[string]interface{})
-        if !ok {
-                dataBytes, ok := message.Data.([]byte)
-                if !ok {
-                        fmt.Printf("Failed to parse system message data\n")
-                        return
-                }
-                
-                if err := json.Unmarshal(dataBytes, &systemData); err != nil {
-                        fmt.Printf("Failed to unmarshal system message: %v\n", err)
-                        return
-                }
-        } else {
-                systemData = data
+        
+        // Directly unmarshal the json.RawMessage
+        if err := json.Unmarshal(message.Data, &systemData); err != nil {
+                fmt.Printf("Failed to unmarshal system message: %v\n", err)
+                return
         }
         
         // Handle system message based on its type
