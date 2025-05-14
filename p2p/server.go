@@ -133,6 +133,32 @@ func (s *Server) GetPeers() []*Peer {
         return peers
 }
 
+// RequestPeerList requests the peer list from a specific peer
+func (s *Server) RequestPeerList(addr string) error {
+        s.peersMutex.RLock()
+        peer, exists := s.peers[addr]
+        s.peersMutex.RUnlock()
+        
+        if !exists {
+                return fmt.Errorf("peer %s not found", addr)
+        }
+        
+        // Create a get peers message
+        message := &Message{
+                Type: MessageTypeGetPeers,
+                Data: json.RawMessage("{}"),
+        }
+        
+        // Marshal message
+        messageBytes, err := json.Marshal(message)
+        if err != nil {
+                return fmt.Errorf("failed to marshal peer list request: %v", err)
+        }
+        
+        // Send message to peer
+        return peer.SendMessage(messageBytes)
+}
+
 // BroadcastMessage broadcasts a message to all peers
 func (s *Server) BroadcastMessage(msgType MessageType, data interface{}) error {
         // Create message

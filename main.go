@@ -15,7 +15,6 @@ import (
         "github.com/doucya/p2p"
         "github.com/doucya/utils"
         "github.com/doucya/storage"
-        "github.com/doucya/wallet"
 )
 
 var (
@@ -124,6 +123,15 @@ func main() {
 
         // Start CLI in a goroutine
         cli := cmd.NewCLI(blockchain, p2pServer, store, cfg)
+        
+        // Display welcome message
+        fmt.Println("\nDoucyA Blockchain - P2P Messaging Platform")
+        fmt.Println("------------------------------------------")
+        fmt.Println("• Create or import a wallet with 'createwallet' or 'importwallet'")
+        fmt.Println("• Connect to peers with 'addpeer <address:port>'")
+        fmt.Println("• Type 'help' for more commands")
+        fmt.Println("------------------------------------------")
+        
         go cli.Start()
 
         // Print node status
@@ -155,103 +163,43 @@ func initializeNode(store *storage.LevelDBStorage) error {
                 lastBlock = genesis
         }
 
-        // Check if a wallet already exists for this node
+        // Don't automatically create a wallet
         wallets, err := store.GetWallets()
         if err != nil {
                 return fmt.Errorf("failed to check existing wallets: %v", err)
         }
 
-        var w *wallet.Wallet
         if len(wallets) > 0 {
-                // Use existing wallet
-                w = wallets[0]
-                fmt.Printf("Using existing node wallet with address: %s\n", w.GetAddress())
+                fmt.Println("Found existing wallets in storage")
+                fmt.Println("You can use 'wallet' command to view wallet details")
         } else {
-                // Create a new wallet for this node
-                w = wallet.NewWallet()
-                if err := store.SaveWallet(w); err != nil {
-                        return fmt.Errorf("failed to save wallet: %v", err)
-                }
-
-                // Only display address, not the private key in console output
-                fmt.Printf("Node wallet initialized with address: %s\n", w.GetAddress())
-                fmt.Println("Use 'importwallet YOUR_PRIVATE_KEY' later if you need to recover this wallet on another node.")
-                
-                // Save private key to a secure file
-                privateKeyFile := "node_private_key.txt"
-                err = os.WriteFile(privateKeyFile, []byte(w.GetPrivateKeyString()), 0600)
-                if err != nil {
-                        fmt.Printf("WARNING: Failed to save private key to file: %v\n", err)
-                        fmt.Printf("IMPORTANT: Save this private key securely, it will not be displayed again: %s\n", 
-                                w.GetPrivateKeyString())
-                } else {
-                        fmt.Printf("Your private key has been saved to %s\n", privateKeyFile)
-                        fmt.Println("IMPORTANT: Keep this file secure and make a backup. It cannot be recovered if lost.")
-                }
+                fmt.Println("No wallets found in storage")
+                fmt.Println("Use 'createwallet' to create a new wallet or 'importwallet' to import an existing one")
+                fmt.Println("First 10 wallets on the network will receive 15,000 DOU genesis allocation")
         }
 
-        // Check if we're one of the first 10 nodes to get genesis allocation
+        // Check the current node count to inform the user
         nodeCount, err := store.GetNodeCount()
         if err != nil {
-                return fmt.Errorf("failed to get node count: %v", err)
-        }
-        
-        // Check if this wallet already has a balance (meaning it's already been counted as a node)
-        // This prevents multiple allocations if someone restarts their node
-        existingBalance, err := store.GetBalance(w.GetAddress())
-        if err != nil {
-                // No balance yet, which is expected for a new node
-                existingBalance = 0
-        }
-        
-        // Check if this is one of the first 10 nodes AND hasn't received an allocation yet
-        if nodeCount < 10 && existingBalance == 0 {
-                // We're one of the first 10 nodes, give us 15,000 DOU
-                fmt.Println("---------------------------------------------")
-                fmt.Println("🎉 Congratulations! You are one of the first 10 nodes on the DoucyA network.")
-                fmt.Println("📊 Current node count: ", nodeCount)
-                fmt.Println("💰 You receive 15,000 DOU genesis allocation.")
-                fmt.Println("---------------------------------------------")
-
-                // Create genesis transaction
-                tx := models.NewTransaction("", w.GetAddress(), 15000.0, models.TransactionTypeGenesis)
-                
-                // Add to a new block
-                block := models.NewBlock([]*models.Transaction{tx}, lastBlock)
-                
-                // Save block
-                if err := store.SaveBlock(block); err != nil {
-                        return fmt.Errorf("failed to save block with genesis allocation: %v", err)
-                }
-                
-                // Update balance
-                if err := store.UpdateBalance(w.GetAddress(), 15000.0); err != nil {
-                        return fmt.Errorf("failed to update balance: %v", err)
-                }
-
-                // Increment node count only if this is a genuinely new node
-                if err := store.IncrementNodeCount(); err != nil {
-                        return fmt.Errorf("failed to increment node count: %v", err)
-                }
-        } else if existingBalance > 0 {
-                // This node was already counted and has a balance
-                fmt.Println("---------------------------------------------")
-                fmt.Println("🔄 Welcome back to the DoucyA network!")
-                fmt.Printf("💰 Your current balance: %.2f DOU\n", existingBalance)
-                fmt.Println("---------------------------------------------")
+                fmt.Printf("Error getting node count: %v\n", err)
         } else {
-                // This is a new node but after the first 10
-                fmt.Println("---------------------------------------------")
-                fmt.Println("🔗 Welcome to the DoucyA network!")
-                fmt.Println("📊 You are node #" + fmt.Sprintf("%d", nodeCount+1))
-                fmt.Println("💡 The first 10 nodes already received the genesis allocation.")
-                fmt.Println("💬 You can earn DOU by participating in messaging and validation.")
-                fmt.Println("---------------------------------------------")
-                
-                // Still increment the node count for accurate tracking
-                if err := store.IncrementNodeCount(); err != nil {
-                        return fmt.Errorf("failed to increment node count: %v", err)
+                if nodeCount < 10 {
+                        fmt.Println("---------------------------------------------")
+                        fmt.Println("ℹ️ Currently there are " + fmt.Sprintf("%d", nodeCount) + " nodes on the network")
+                        fmt.Println("ℹ️ First 10 wallets will receive 15,000 DOU genesis allocation")
+                        fmt.Println("---------------------------------------------")
+                } else {
+                        fmt.Println("---------------------------------------------")
+                        fmt.Println("ℹ️ Currently there are " + fmt.Sprintf("%d", nodeCount) + " nodes on the network")
+                        fmt.Println("ℹ️ The 15,000 DOU genesis allocation has been fully distributed")
+                        fmt.Println("💬 You can earn DOU by participating in messaging and validation.")
+                        fmt.Println("---------------------------------------------")
                 }
+        }
+        
+        // Still increment the node count for accurate tracking
+        if err := store.IncrementNodeCount(); err != nil {
+                return fmt.Errorf("failed to increment node count: %v", err)
         }
 
         return nil

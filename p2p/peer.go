@@ -36,13 +36,42 @@ func NewPeer(addr string, server *Server) (*Peer, error) {
         }, nil
 }
 
-// Connect connects to the peer
+// Connect connects to the peer with a timeout
 func (p *Peer) Connect() error {
-        conn, err := net.DialTimeout("tcp", p.addr, 5*time.Second)
+        // Use a shorter timeout for connection to prevent CLI from hanging
+        conn, err := net.DialTimeout("tcp", p.addr, 3*time.Second)
         if err != nil {
                 return fmt.Errorf("failed to connect to peer %s: %v", p.addr, err)
         }
+        
+        // Set deadlines to prevent blocking indefinitely
+        conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+        conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+        
         p.conn = conn
+        
+        // Send a handshake message to identify our protocol
+        handshake := Message{
+                Type: MessageTypeNodeInfo,
+                Data: json.RawMessage(`{"version":"1.0","protocol":"doucyap2p"}`),
+        }
+        
+        handshakeBytes, err := json.Marshal(handshake)
+        if err != nil {
+                conn.Close()
+                return fmt.Errorf("failed to create handshake: %v", err)
+        }
+        
+        _, err = conn.Write(handshakeBytes)
+        if err != nil {
+                conn.Close()
+                return fmt.Errorf("failed to send handshake: %v", err)
+        }
+        
+        // Reset deadlines to normal operation
+        conn.SetReadDeadline(time.Time{})
+        conn.SetWriteDeadline(time.Time{})
+        
         return nil
 }
 

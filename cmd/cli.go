@@ -54,15 +54,12 @@ func (cli *CLI) Start() {
         }
 }
 
-// InitializeNode initializes a new node
+// InitializeNode initializes a new node without creating a wallet automatically
 func (cli *CLI) InitializeNode() error {
-        // Create a wallet for this node if it doesn't exist
-        address, err := cli.CreateNewWallet()
-        if err != nil {
-                return fmt.Errorf("failed to create node wallet: %v", err)
-        }
-
-        fmt.Printf("Node initialized with address: %s\n", address)
+        // Check if the blockchain is properly initialized
+        fmt.Println("DoucyA Blockchain node initialized successfully")
+        fmt.Println("Use 'createwallet' to create a new wallet or 'importwallet' to import an existing one")
+        fmt.Println("First 10 wallets will receive 15,000 DOU genesis allocation")
         return nil
 }
 
@@ -655,13 +652,20 @@ func (cli *CLI) showPeers() {
 }
 
 func (cli *CLI) addPeer(addr string) {
+        fmt.Printf("Connecting to peer %s...\n", addr)
+        
+        // Try to connect to the peer
         err := cli.p2pServer.AddPeer(addr)
         if err != nil {
                 fmt.Printf("Failed to add peer: %v\n", err)
                 return
         }
-
-        fmt.Printf("Added peer: %s\n", addr)
+        
+        fmt.Printf("Successfully connected to peer: %s\n", addr)
+        
+        // Show current peer count
+        peers := cli.p2pServer.GetPeers()
+        fmt.Printf("Current peers: %d\n", len(peers))
 }
 
 // replyToMessage sends a reply to a specific message
