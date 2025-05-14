@@ -220,3 +220,40 @@
 21:05:20.877991 version@stat F·[2 1] S·3KiB[1KiB 2KiB] Sc·[0.50 0.00]
 21:05:20.905682 db@janitor F·5 G·0
 21:05:20.905741 db@open done T·29.142268ms
+=============== May 14, 2025 (UTC) ===============
+21:08:06.748748 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+21:08:06.748949 version@stat F·[2 1] S·3KiB[1KiB 2KiB] Sc·[0.50 0.00]
+21:08:06.748972 db@open opening
+21:08:06.749029 journal@recovery F·1
+21:08:06.749649 journal@recovery recovering @54
+21:08:06.786512 memdb@flush created L0@56 N·5 S·849B "bal..cyA,v50":"wal..cyA,v46"
+21:08:06.787020 version@stat F·[3 1] S·4KiB[2KiB 2KiB] Sc·[0.75 0.00]
+21:08:06.797599 db@janitor F·6 G·0
+21:08:06.797644 db@open done T·48.647917ms
+=============== May 14, 2025 (UTC) ===============
+21:11:50.797612 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+21:11:50.797788 version@stat F·[3 1] S·4KiB[2KiB 2KiB] Sc·[0.75 0.00]
+21:11:50.797813 db@open opening
+21:11:50.797865 journal@recovery F·1
+21:11:50.798584 journal@recovery recovering @57
+21:11:50.799432 version@stat F·[3 1] S·4KiB[2KiB 2KiB] Sc·[0.75 0.00]
+21:11:50.860278 db@janitor F·6 G·0
+21:11:50.860324 db@open done T·62.495566ms
+=============== May 14, 2025 (UTC) ===============
+21:12:22.291975 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+21:12:22.292157 version@stat F·[3 1] S·4KiB[2KiB 2KiB] Sc·[0.75 0.00]
+21:12:22.292181 db@open opening
+21:12:22.292239 journal@recovery F·1
+21:12:22.292903 journal@recovery recovering @59
+21:12:22.293448 version@stat F·[3 1] S·4KiB[2KiB 2KiB] Sc·[0.75 0.00]
+21:12:22.347795 db@janitor F·6 G·0
+21:12:22.347838 db@open done T·55.644227ms
+=============== May 14, 2025 (UTC) ===============
+21:12:38.170970 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+21:12:38.171122 version@stat F·[3 1] S·4KiB[2KiB 2KiB] Sc·[0.75 0.00]
+21:12:38.171141 db@open opening
+21:12:38.171179 journal@recovery F·1
+21:12:38.171852 journal@recovery recovering @61
+21:12:38.172239 version@stat F·[3 1] S·4KiB[2KiB 2KiB] Sc·[0.75 0.00]
+21:12:38.210113 db@janitor F·6 G·0
+21:12:38.210172 db@open done T·39.008737ms

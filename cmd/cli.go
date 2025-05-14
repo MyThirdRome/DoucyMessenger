@@ -125,6 +125,12 @@ func (cli *CLI) processCommand(cmd string) {
                         return
                 }
                 cli.getBalance(args[1])
+        case "requestbalance":
+                if len(args) < 2 {
+                        fmt.Println("Usage: requestbalance ADDRESS")
+                        return
+                }
+                cli.requestBalance(args[1])
         case "send":
                 if len(args) < 4 {
                         fmt.Println("Usage: send FROM TO AMOUNT")
@@ -261,6 +267,7 @@ func (cli *CLI) printHelp() {
         fmt.Println("  importwallet PRIVATE_KEY            - Import a wallet from a private key")
         fmt.Println("  listaddresses                       - List all wallet addresses")
         fmt.Println("  getbalance ADDRESS                  - Get balance for an address")
+        fmt.Println("  requestbalance ADDRESS              - Request balance of ADDRESS from connected peers")
         fmt.Println("  send FROM TO AMOUNT                 - Send coins from one address to another")
         
         fmt.Println("\n=== Messaging Commands ===")
@@ -499,6 +506,62 @@ func (cli *CLI) getBalance(address string) {
         }
 
         fmt.Printf("Balance of '%s': %.10f DOU\n", address, balance)
+}
+
+// requestBalance requests balance information for an address from all connected peers
+func (cli *CLI) requestBalance(address string) {
+        // Validate address
+        if !wallet.ValidateAddress(address) {
+                fmt.Println("Invalid address format")
+                return
+        }
+        
+        // Check if we have any connected peers
+        peers := cli.p2pServer.GetPeers()
+        if len(peers) == 0 {
+                fmt.Println("No peers connected. Use 'sync' first to connect to peers.")
+                return
+        }
+        
+        fmt.Printf("Requesting balance for address %s from %d peers...\n", address, len(peers))
+        
+        // Create balance request message
+        request := &p2p.BalanceRequest{
+                Address: address,
+        }
+        
+        // Send the request to all peers
+        for _, peer := range peers {
+                // Create and serialize the message
+                message := &p2p.Message{
+                        Type: p2p.MessageTypeGetBalance,
+                        Data: nil,
+                }
+                
+                // Marshal the request data
+                var err error
+                message.Data, err = json.Marshal(request)
+                if err != nil {
+                        fmt.Printf("Failed to marshal balance request: %v\n", err)
+                        continue
+                }
+                
+                // Marshal the full message
+                messageBytes, err := json.Marshal(message)
+                if err != nil {
+                        fmt.Printf("Failed to marshal message: %v\n", err)
+                        continue
+                }
+                
+                // Send to peer
+                if err := peer.SendMessage(messageBytes); err != nil {
+                        fmt.Printf("Failed to send balance request to peer %s: %v\n", peer.GetAddr(), err)
+                } else {
+                        fmt.Printf("Balance request sent to peer %s\n", peer.GetAddr())
+                }
+        }
+        
+        fmt.Println("Balance requests sent. Check local balance with 'getbalance " + address + "' in a few seconds.")
 }
 
 func (cli *CLI) sendCoins(from, to string, amount float64) {

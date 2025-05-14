@@ -1174,16 +1174,27 @@ func (s *Server) handleTransaction(peer *Peer, message *Message) {
 
 // handleGetBlocks handles a get blocks message
 func (s *Server) handleGetBlocks(peer *Peer, message *Message) {
-        var startHeight int64
+        // Parse the request using a map to handle the JSON format
+        var request map[string]interface{}
         
-        err := json.Unmarshal(message.Data, &startHeight)
+        err := json.Unmarshal(message.Data, &request)
         if err != nil {
-                fmt.Printf("Failed to unmarshal get blocks: %v\n", err)
+                utils.Error("Failed to unmarshal get blocks: %v", err)
                 return
         }
+        
+        // Extract the from_height field
+        fromHeightFloat, ok := request["from_height"].(float64)
+        if !ok {
+                utils.Error("Invalid from_height in GetBlocks request")
+                return
+        }
+        
+        // Convert to int64
+        startHeight := int64(fromHeightFloat)
 
         // TODO: Implement fetching blocks from storage and sending to peer
-        fmt.Printf("Received request for blocks starting at height %d\n", startHeight)
+        utils.Info("Received request for blocks starting at height %d", startHeight)
 }
 
 // handleGetPeers handles a get peers message
