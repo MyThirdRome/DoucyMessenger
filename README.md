@@ -13,59 +13,27 @@ A peer-to-peer messaging blockchain with DOU cryptocurrency built in Golang usin
 - Rate limiting (200 messages/hour, 30 messages to a single address)
 - Privacy-focused interface
 
-## Complete Installation Guide for DoucyA Blockchain
+## Quick Installation Guide
 
-### Step 1: Update System and Install Prerequisites
-
+### Step 1: Update system and install dependencies
 ```bash
-# Update package list
 sudo apt update
-
-# Install essential tools
-sudo apt install -y build-essential wget git curl libleveldb-dev
+sudo apt upgrade -y
+sudo apt install -y git build-essential golang-go libleveldb-dev
 ```
 
-### Step 2: Install Go
-
+### Step 2: Clone the repository
 ```bash
-# Download the latest Go version
-wget https://golang.org/dl/go1.21.5.linux-amd64.tar.gz
-
-# Extract Go to /usr/local
-sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf go1.21.5.linux-amd64.tar.gz
-rm go1.21.5.linux-amd64.tar.gz
-
-# Add Go to PATH
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.profile
-echo 'export PATH=$PATH:$HOME/go/bin' >> ~/.profile
-source ~/.profile
-
-# Verify Go installation
-go version
-```
-
-### Step 3: Clone the DoucyA Repository
-
-```bash
-# Clone the repository
+mkdir -p ~/projects
+cd ~/projects
 git clone https://github.com/MyThirdRome/DoucyMessenger.git
 cd DoucyMessenger
 ```
 
-### Step 4: Build the Application
-
+### Step 3: Build and initialize the blockchain
 ```bash
-# Get dependencies and build
 go mod tidy
-go build -o doucya_blockchain main.go
-```
-
-### Step 5: Initialize the Blockchain Node
-
-```bash
-# Initialize a new node
-./doucya_blockchain -init
+go run main.go -init
 ```
 
 This will:
@@ -74,17 +42,13 @@ This will:
 - Save the private key to node_private_key.txt
 - Allocate 15,000 DOU if you're among the first 10 nodes
 
-### Step 6: Run the Blockchain Node
-
+### Step 4: Run the blockchain
 ```bash
-# Run the node with default settings
-./doucya_blockchain
-
-# Or run with specific parameters
-# ./doucya_blockchain -port 8333 -db ./doucya_data
+# Run the node
+go run main.go
 ```
 
-### Step 7: Connect to Other Nodes (for Synchronization)
+### Step 5: Connect to Other Nodes (for Synchronization)
 
 Once in the CLI prompt, add peer nodes:
 
@@ -92,41 +56,34 @@ Once in the CLI prompt, add peer nodes:
 > addpeer OTHER_SERVER_IP:8333
 ```
 
-## Setting Up for Auto-start
+## Setting Up for Auto-start (Optional)
 
-### Create a Systemd Service
+If you want your blockchain node to run automatically at system startup:
 
 ```bash
 # Create a systemd service file
-sudo nano /etc/systemd/system/doucya.service
-```
-
-Add the following content (adjust paths accordingly):
-
-```
+sudo tee /etc/systemd/system/doucya.service > /dev/null << EOT
 [Unit]
 Description=DoucyA Blockchain
 After=network.target
 
 [Service]
-User=your_username
-WorkingDirectory=/home/your_username/DoucyMessenger
-ExecStart=/home/your_username/DoucyMessenger/doucya_blockchain
+User=$USER
+WorkingDirectory=$HOME/projects/DoucyMessenger
+ExecStart=/usr/bin/go run $HOME/projects/DoucyMessenger/main.go
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
-```
+EOT
 
-Then enable and start the service:
-
-```bash
+# Enable and start the service
 sudo systemctl daemon-reload
 sudo systemctl enable doucya.service
 sudo systemctl start doucya.service
 
-# Check status
+# Check the status
 sudo systemctl status doucya.service
 ```
 
