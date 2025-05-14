@@ -52,3 +52,52 @@
 12:41:39.596638 table@remove removed @8
 12:41:39.596719 table@remove removed @5
 12:41:39.596767 table@remove removed @2
+=============== May 14, 2025 (UTC) ===============
+12:45:04.294349 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+12:45:04.294569 version@stat F·[0 1] S·2KiB[0B 2KiB] Sc·[0.00 0.00]
+12:45:04.294592 db@open opening
+12:45:04.294653 journal@recovery F·1
+12:45:04.295445 journal@recovery recovering @12
+12:45:04.323061 memdb@flush created L0@15 N·5 S·850B "bal..cyA,v31":"wal..cyA,v27"
+12:45:04.323613 version@stat F·[1 1] S·3KiB[850B 2KiB] Sc·[0.25 0.00]
+12:45:04.333429 db@janitor F·4 G·0
+12:45:04.333484 db@open done T·38.876057ms
+=============== May 14, 2025 (UTC) ===============
+12:46:58.093684 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+12:46:58.093865 version@stat F·[1 1] S·3KiB[850B 2KiB] Sc·[0.25 0.00]
+12:46:58.093899 db@open opening
+12:46:58.093946 journal@recovery F·1
+12:46:58.094668 journal@recovery recovering @16
+12:46:58.129627 memdb@flush created L0@18 N·5 S·851B "bal..cyA,v37":"wal..cyA,v33"
+12:46:58.130040 version@stat F·[2 1] S·3KiB[1KiB 2KiB] Sc·[0.50 0.00]
+12:46:58.139795 db@janitor F·5 G·0
+12:46:58.139845 db@open done T·45.928837ms
+=============== May 14, 2025 (UTC) ===============
+12:47:07.352016 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+12:47:07.352219 version@stat F·[2 1] S·3KiB[1KiB 2KiB] Sc·[0.50 0.00]
+12:47:07.352239 db@open opening
+12:47:07.352287 journal@recovery F·1
+12:47:07.354934 journal@recovery recovering @19
+12:47:07.360087 memdb@flush created L0@21 N·5 S·851B "bal..cyA,v43":"wal..cyA,v39"
+12:47:07.360463 version@stat F·[3 1] S·4KiB[2KiB 2KiB] Sc·[0.75 0.00]
+12:47:07.368314 db@janitor F·6 G·0
+12:47:07.368358 db@open done T·16.101329ms
+=============== May 14, 2025 (UTC) ===============
+12:47:40.582805 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+12:47:40.583088 version@stat F·[3 1] S·4KiB[2KiB 2KiB] Sc·[0.75 0.00]
+12:47:40.583184 db@open opening
+12:47:40.583226 journal@recovery F·1
+12:47:40.583788 journal@recovery recovering @22
+12:47:40.587952 memdb@flush created L0@24 N·5 S·852B "bal..cyA,v49":"wal..cyA,v45"
+12:47:40.588281 version@stat F·[4 1] S·5KiB[3KiB 2KiB] Sc·[1.00 0.00]
+12:47:40.597830 db@janitor F·7 G·0
+12:47:40.597871 db@open done T·14.66935ms
+12:47:40.597975 table@compaction L0·4 -> L1·1 S·5KiB Q·50
+12:47:40.601479 table@build created L1@27 N·34 S·4KiB "bal..cyA,v13":"wal..cyA,v45"
+12:47:40.601519 version@stat F·[0 1] S·4KiB[0B 4KiB] Sc·[0.00 0.00]
+12:47:40.607773 table@compaction committed F-4 S-864B Ke·0 D·4 T·9.41482ms
+12:47:40.607864 table@remove removed @24
+12:47:40.607913 table@remove removed @21
+12:47:40.607956 table@remove removed @18
+12:47:40.608008 table@remove removed @15
+12:47:40.608116 table@remove removed @14
