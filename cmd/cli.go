@@ -656,22 +656,40 @@ func (cli *CLI) showPeers() {
 func (cli *CLI) addPeer(addr string) {
         fmt.Printf("Connecting to peer %s...\n", addr)
         
-        // Use a goroutine with timeout to avoid blocking the main CLI
+        // Use a channel with buffer to avoid goroutine leak
         connectChannel := make(chan error, 1)
+        
+        // Create done channel to signal completion
+        done := make(chan struct{})
+        defer close(done)
         
         // Start connection in a goroutine
         go func() {
-                err := cli.p2pServer.AddPeer(addr)
-                connectChannel <- err
+                select {
+                case <-done:
+                        // The function has returned, abort connection attempt
+                        return
+                default:
+                        // Attempt to connect
+                        err := cli.p2pServer.AddPeer(addr)
+                        
+                        // Try to send result, but don't block if function has already returned
+                        select {
+                        case connectChannel <- err:
+                                // Sent successfully
+                        case <-done:
+                                // Function already returned
+                        }
+                }
         }()
         
-        // Wait for result with timeout
+        // Wait for result with a shorter timeout (3 seconds)
         var err error
         select {
         case err = <-connectChannel:
                 // Connection attempt completed (success or failure)
-        case <-time.After(5 * time.Second):
-                err = fmt.Errorf("connection timed out after 5 seconds")
+        case <-time.After(3 * time.Second):
+                err = fmt.Errorf("connection timed out after 3 seconds")
         }
         
         // Handle connection result

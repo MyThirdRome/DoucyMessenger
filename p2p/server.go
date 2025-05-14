@@ -110,18 +110,36 @@ func (s *Server) AddPeer(addr string) error {
         s.peersMutex.Unlock()
         
         // Connect with timeout
+        done := make(chan struct{})
+        defer close(done)
+        
         connectChan := make(chan error, 1)
         go func() {
-                connectChan <- peer.Connect()
+                select {
+                case <-done:
+                        // Function returned early, cancel connection
+                        return
+                default:
+                        // Try to connect
+                        err := peer.Connect()
+                        
+                        // Only send result if function hasn't returned
+                        select {
+                        case connectChan <- err:
+                                // Result sent
+                        case <-done:
+                                // Function already returned
+                        }
+                }
         }()
         
-        // Wait for connection with timeout (3 seconds)
+        // Wait for connection with timeout (2 seconds)
         var connectErr error
         select {
         case connectErr = <-connectChan:
                 // Connection completed (success or error)
-        case <-time.After(3 * time.Second):
-                connectErr = fmt.Errorf("connection timeout after 3 seconds")
+        case <-time.After(2 * time.Second):
+                connectErr = fmt.Errorf("connection timeout after 2 seconds")
         }
         
         if connectErr != nil {
@@ -146,8 +164,8 @@ func (s *Server) AddPeer(addr string) error {
         // Start peer handlers
         go peer.HandleMessages()
         
-        // Exchange node information
-        go s.exchangeNodeInfo(peer) // Do this in background to avoid blocking
+        // Exchange node information - async to avoid blocking
+        go s.exchangeNodeInfo(peer)
         
         return nil
 }
