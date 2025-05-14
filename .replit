@@ -1,0 +1,27 @@
+modules = ["go"]
+
+[nix]
+channel = "stable-24_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "DoucyA Blockchain"
+
+[[workflows.workflow]]
+name = "DoucyA Blockchain"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "go mod tidy && go run main.go -init"
+
+[deployment]
+run = ["sh", "-c", "go mod tidy && go run main.go -init"]
