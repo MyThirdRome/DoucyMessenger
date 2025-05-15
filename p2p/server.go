@@ -372,6 +372,33 @@ func (s *Server) BroadcastValidator(validator interface{}) error {
         return nil
 }
 
+// BroadcastTransaction broadcasts a transaction to all connected peers
+func (s *Server) BroadcastTransaction(tx interface{}) error {
+        utils.Info("Broadcasting transaction to all connected nodes...")
+        
+        // First broadcast to all connected peers
+        err := s.BroadcastMessage(MessageTypeTransaction, tx)
+        if err != nil {
+                return fmt.Errorf("failed to broadcast transaction: %v", err)
+        }
+        
+        // Also ensure we're connected to all bootstrap nodes in nodes.txt
+        // This is important to make sure transactions propagate to trusted nodes
+        s.ensureBootstrapConnections()
+        
+        // Count connected peers
+        peerCount := len(s.GetPeers())
+        
+        // Log transaction broadcast with ID if available
+        if txWithID, ok := tx.(interface{ GetID() string }); ok {
+                utils.Info("Transaction %s broadcast to %d peers", txWithID.GetID(), peerCount)
+        } else {
+                utils.Info("Transaction broadcast to %d peers", peerCount)
+        }
+        
+        return nil
+}
+
 // HandleMessage handles a received message
 func (s *Server) HandleMessage(peer *Peer, message *Message) {
         switch message.Type {

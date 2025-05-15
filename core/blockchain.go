@@ -607,6 +607,14 @@ func (bc *Blockchain) SendCoins(from, to string, amount float64) error {
         if err := bc.storage.SaveTransaction(tx); err != nil {
                 utils.Error("Failed to save transaction: %v", err)
         }
+        
+        // Broadcast transaction to peers if we have a P2P server
+        if bc.p2pServer != nil {
+                if err := bc.p2pServer.BroadcastTransaction(tx); err != nil {
+                        utils.Error("Failed to broadcast transaction: %v", err)
+                        // Continue even if broadcast fails since the transaction is already processed locally
+                }
+        }
 
         return nil
 }
