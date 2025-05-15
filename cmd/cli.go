@@ -266,6 +266,7 @@ func (cli *CLI) printHelp() {
         fmt.Println("  help                                - Show this help message")
         fmt.Println("  exit, quit                          - Exit the CLI")
         fmt.Println("  status                              - Show blockchain status")
+        fmt.Println("  utxoconvert                         - Convert legacy balances to UTXO format")
         
         fmt.Println("\n=== Wallet Commands ===")
         fmt.Println("  createwallet                        - Create a new wallet")
