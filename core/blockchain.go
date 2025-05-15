@@ -56,6 +56,7 @@ func NewBlockchain(storage *storage.LevelDBStorage, config *utils.Config) (*Bloc
                 messageRates:        make(map[string]*MessageRateLimit),
                 pendingRewards:      make(map[string]map[string]float64),
                 config:              config,
+                broadcastTx:         nil, // Will be set by SetBroadcastTxFunc
         }
 
         // Try to load existing blockchain
@@ -1612,6 +1613,8 @@ func (bc *Blockchain) GetCurrentBlock() *models.Block {
         defer bc.mu.RUnlock()
         return bc.currentBlock
 }
+
+
 
 // AddBlock adds a new block to the blockchain
 func (bc *Blockchain) AddBlock(block *models.Block) error {

@@ -376,28 +376,102 @@ func (s *Server) BroadcastValidator(validator interface{}) error {
 }
 
 // BroadcastTransaction broadcasts a transaction to all connected peers
+// This follows an Ethereum-like approach for transaction broadcast
 func (s *Server) BroadcastTransaction(tx interface{}) error {
         utils.Info("Broadcasting transaction to all connected nodes...")
         
-        // First broadcast to all connected peers
-        err := s.BroadcastMessage(MessageTypeTransaction, tx)
-        if err != nil {
-                return fmt.Errorf("failed to broadcast transaction: %v", err)
-        }
-        
-        // Also ensure we're connected to all bootstrap nodes in nodes.txt
-        // This is important to make sure transactions propagate to trusted nodes
-        s.ensureBootstrapConnections()
-        
-        // Count connected peers
-        peerCount := len(s.GetPeers())
-        
-        // Log transaction broadcast with ID if available
+        // Get transaction ID for tracking
+        var txID string
         if txWithID, ok := tx.(interface{ GetID() string }); ok {
-                utils.Info("Transaction %s broadcast to %d peers", txWithID.GetID(), peerCount)
+                txID = txWithID.GetID()
         } else {
-                utils.Info("Transaction broadcast to %d peers", peerCount)
+                txID = fmt.Sprintf("unknown-%v", time.Now().UnixNano())
         }
+        
+        // Marshal transaction to JSON
+        txJSON, err := json.Marshal(tx)
+        if err != nil {
+                return fmt.Errorf("failed to marshal transaction: %v", err)
+        }
+        
+        // Create a message object with the transaction
+        message := &Message{
+                Type: MessageTypeTransaction,
+                Data: json.RawMessage(txJSON),
+        }
+        
+        // First broadcast to all direct peers with reliable delivery
+        s.peersMutex.RLock()
+        peers := make([]*Peer, 0, len(s.peers))
+        for _, peer := range s.peers {
+                peers = append(peers, peer)
+        }
+        s.peersMutex.RUnlock()
+        
+        // Track peers that successfully received the transaction
+        successCount := 0
+        
+        // Use a waitgroup to track all broadcast attempts
+        var wg sync.WaitGroup
+        var broadcastMutex sync.Mutex
+        
+        // Fan out broadcast to all peers concurrently
+        for _, peer := range peers {
+                wg.Add(1)
+                go func(p *Peer) {
+                        defer wg.Done()
+                        
+                        // Try to send the transaction with timeout
+                        sendErr := p.SendMessageObject(message)
+                        
+                        broadcastMutex.Lock()
+                        defer broadcastMutex.Unlock()
+                        
+                        if sendErr != nil {
+                                utils.Error("Failed to send transaction %s to peer %s: %v", 
+                                        txID, p.conn.RemoteAddr().String(), sendErr)
+                        } else {
+                                successCount++
+                        }
+                }(peer)
+        }
+        
+        // Wait for all broadcast attempts to complete
+        wg.Wait()
+        
+        // If we didn't reach even a single peer, try to reconnect to bootstrap nodes
+        if successCount == 0 && len(peers) > 0 {
+                utils.Info("Transaction broadcast failed to all peers, reconnecting to bootstrap nodes...")
+                s.ensureBootstrapConnections()
+                
+                // Try broadcasting again to newly connected peers
+                s.peersMutex.RLock()
+                newPeers := make([]*Peer, 0, len(s.peers))
+                for _, peer := range s.peers {
+                        // Only include peers not in the original broadcast attempt
+                        isNewPeer := true
+                        for _, oldPeer := range peers {
+                                if oldPeer.conn.RemoteAddr().String() == peer.conn.RemoteAddr().String() {
+                                        isNewPeer = false
+                                        break
+                                }
+                        }
+                        if isNewPeer {
+                                newPeers = append(newPeers, peer)
+                        }
+                }
+                s.peersMutex.RUnlock()
+                
+                // Broadcast to new peers
+                for _, peer := range newPeers {
+                        if err := peer.SendMessageObject(message); err == nil {
+                                successCount++
+                        }
+                }
+        }
+        
+        // Log transaction broadcast result
+        utils.Info("Transaction %s broadcast to %d/%d peers", txID, successCount, len(peers))
         
         return nil
 }
@@ -495,8 +569,11 @@ func (s *Server) handleValidator(peer *Peer, message *Message) {
 
 // handleGetValidators handles a request for validators
 func (s *Server) handleGetValidators(peer *Peer) {
-        validators := s.blockchain.GetValidators()
-        // No error handling needed as interface doesn't return error
+        validators, err := s.blockchain.GetValidators()
+        if err != nil {
+                utils.Error("Failed to get validators: %v", err)
+                return
+        }
         
         if len(validators) == 0 {
                 utils.Info("No validators to send to peer %s", peer.GetAddr())
