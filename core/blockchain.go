@@ -35,6 +35,7 @@ type Blockchain struct {
         messageRates        map[string]*MessageRateLimit
         pendingRewards      map[string]map[string]float64 // sender -> receiver -> amount
         config              *utils.Config
+        broadcastTx         func(tx interface{}) error   // Function to broadcast transactions
 }
 
 // MessageRateLimit tracks message rate limits for addresses
@@ -608,9 +609,9 @@ func (bc *Blockchain) SendCoins(from, to string, amount float64) error {
                 utils.Error("Failed to save transaction: %v", err)
         }
         
-        // Broadcast transaction to peers if we have a P2P server
-        if bc.p2pServer != nil {
-                if err := bc.p2pServer.BroadcastTransaction(tx); err != nil {
+        // Broadcast transaction to peers if we have a broadcast function set
+        if bc.broadcastTx != nil {
+                if err := bc.broadcastTx(tx); err != nil {
                         utils.Error("Failed to broadcast transaction: %v", err)
                         // Continue even if broadcast fails since the transaction is already processed locally
                 }

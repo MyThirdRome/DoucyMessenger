@@ -8,7 +8,7 @@ import (
         "sync"
         "time"
 
-        "github.com/doucya/core"
+        "github.com/doucya/interfaces"
         "github.com/doucya/models"
         "github.com/doucya/utils"
 )
@@ -19,10 +19,13 @@ func init() {
         rand.Seed(time.Now().UnixNano())
 }
 
+// BlockchainInterface defines the methods needed from the blockchain
+type BlockchainInterface interfaces.Blockchain
+
 // Server represents the P2P server
 type Server struct {
         listenAddr     string
-        blockchain     *core.Blockchain
+        blockchain     interfaces.Blockchain
         bootstrapNodes []string
         peers          map[string]*Peer
         peersMutex     sync.RWMutex
@@ -31,7 +34,7 @@ type Server struct {
 }
 
 // NewServer creates a new P2P server
-func NewServer(listenAddr string, blockchain *core.Blockchain, bootstrapNodes []string) *Server {
+func NewServer(listenAddr string, blockchain interfaces.Blockchain, bootstrapNodes []string) *Server {
         return &Server{
                 listenAddr:     listenAddr,
                 blockchain:     blockchain,
@@ -439,33 +442,22 @@ func (s *Server) HandleMessage(peer *Peer, message *Message) {
 
 // handleValidator handles a validator message
 func (s *Server) handleValidator(peer *Peer, message *Message) {
-        var validator core.Validator
-        if err := json.Unmarshal(message.Data, &validator); err != nil {
+        var validatorData map[string]interface{}
+        if err := json.Unmarshal(message.Data, &validatorData); err != nil {
                 utils.Error("Error unmarshaling validator: %v", err)
                 return
         }
 
+        // Log the validator data from map
+        address, _ := validatorData["address"].(string)
+        stake, _ := validatorData["stake"].(float64)
         utils.Info("Received validator data from peer %s: address=%s, stake=%.2f", 
-                peer.GetAddr(), validator.Address, validator.Deposit)
+                peer.GetAddr(), address, stake)
 
-        // Convert to models.Validator
-        modelValidator := &models.Validator{
-                Address:         validator.Address,
-                Deposit:         validator.Deposit,
-                StartTime:       validator.StartTime,
-                LastRewardTime:  validator.LastRewardTime,
-                Status:          models.ValidatorStatusActive,
-                MessageCount:    validator.MessageCount,
-                TotalEarnings:   validator.TotalRewards,
-                RewardHistories: []models.RewardHistory{},
-                YearlyAPY:       0.17, // 17% APY
-                MinimumStake:    50.0, // 50 DOU minimum
-        }
-
-        // Add the validator to the blockchain
-        err := s.blockchain.SyncValidator(modelValidator)
+        // Forward the transaction for processing using the blockchain interface
+        err := s.blockchain.ProcessTransaction(validatorData)
         if err != nil {
-                utils.Error("Failed to sync validator: %v", err)
+                utils.Error("Failed to process validator transaction: %v", err)
                 return
         }
 
@@ -482,11 +474,10 @@ func (s *Server) handleValidator(peer *Peer, message *Message) {
         s.peersMutex.RUnlock()
         
         if len(peersToForward) > 0 {
-                utils.Info("Forwarding validator %s to %d other peers", 
-                        validator.Address, len(peersToForward))
+                utils.Info("Forwarding validator to %d other peers", len(peersToForward))
                         
                 // Create message bytes once
-                messageBytes, err := s.createMessageBytes(MessageTypeValidator, validator)
+                messageBytes, err := s.createMessageBytes(MessageTypeValidator, validatorData)
                 if err != nil {
                         utils.Error("Failed to create validator message: %v", err)
                         return
@@ -504,11 +495,8 @@ func (s *Server) handleValidator(peer *Peer, message *Message) {
 
 // handleGetValidators handles a request for validators
 func (s *Server) handleGetValidators(peer *Peer) {
-        validators, err := s.blockchain.GetValidators()
-        if err != nil {
-                utils.Error("Error getting validators: %v", err)
-                return
-        }
+        validators := s.blockchain.GetValidators()
+        // No error handling needed as interface doesn't return error
         
         if len(validators) == 0 {
                 utils.Info("No validators to send to peer %s", peer.GetAddr())
@@ -547,11 +535,8 @@ func (s *Server) handleValidatorList(peer *Peer, message *Message) {
         }
 
         // Compare with our validators and request any we don't have
-        ourValidators, err := s.blockchain.GetValidators()
-        if err != nil {
-                utils.Error("Error getting validators: %v", err)
-                return
-        }
+        ourValidators := s.blockchain.GetValidators()
+        // No error handling needed as interface doesn't return error
         
         ourValidatorMap := make(map[string]bool)
         

@@ -13,8 +13,8 @@ import (
         "github.com/doucya/core"
         "github.com/doucya/models"
         "github.com/doucya/p2p"
-        "github.com/doucya/utils"
         "github.com/doucya/storage"
+        "github.com/doucya/utils"
 )
 
 var (
@@ -88,9 +88,15 @@ func main() {
                 log.Fatalf("Failed to create blockchain: %v", err)
         }
         
-        // Initialize P2P server
+        // Initialize P2P server directly (we'll update the interface implementation later)
         p2pPortStr := fmt.Sprintf(":%d", *p2pPort)
         p2pServer := p2p.NewServer(p2pPortStr, blockchain, cfg.BootstrapNodes)
+        
+        // Set the broadcast function in the blockchain, this is the key part
+        // that enables transaction broadcasting
+        blockchain.SetBroadcastTxFunc(func(tx interface{}) error {
+                return p2pServer.BroadcastTransaction(tx)
+        })
 
         // Check if we need to initialize a new node
         if *initNode {
